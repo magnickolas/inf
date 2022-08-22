@@ -1,0 +1,140 @@
+#!/bin/bash
+set -e
+
+usage() {
+    printf 'Usage: %s [ARGS] COMPILE_CMD\n' "$(basename "$0")"
+    printf '\t-r | --runcmd  : Execution target command\n'
+    printf '\t-n | --norun   : No run (compile-only)\n'
+    printf '\t-e | --exec    : Target file\n'
+    printf '\t-i | --input   : Input file\n'
+    printf '\t-z | --noinput : No input\n'
+    printf '\t-f | --file    : Source file\n'
+    printf '\t-m | --monitor : Extra comma-separated files to trigger recompilation\n'
+    printf '\t-v | --verbose : Verbose compiler output\n'
+    printf '\t-h | --help    : Print this message\n'
+}
+
+compileAndRun() {
+    printf '\033[0;34m[compilation: %s]\033[0m\n' "${compileCmd}"
+
+    # In case of executing compile target
+    # suppress stdout of compile command
+    # if not requested `verbose` for cleanliness
+    if [[ ${norun} = 0 ]]; then
+        if [[ ${verbose} = 1 ]]; then
+            eval "${compileCmd}"
+        else
+            eval "${compileCmd}" 1>/dev/null
+        fi
+        compileCode=$?
+        if [[ ${compileCode} = 0 ]]; then
+            printf '\033[0;32m%s\033[0m\n' "${runCmd}"
+            eval "${runCmd}"
+        fi
+    else
+        eval "${compileCmd}"
+    fi
+}
+
+parse_args() {
+    while [[ "$1" != "" ]]; do
+        case "$1" in
+                -r | --runcmd    ) export runCmd="$2"       ; shift;;
+                -n | --norun     ) export norun=1                  ;;
+                -e | --exec      ) export exec="$2"         ; shift;;
+                -i | --input     ) export inputfile="$3"    ; shift;;
+                -z | --zeroinput ) export noinput=1                ;;
+                -f | --file      ) export filename="$2"     ; shift;;
+                -m | --monitor   ) export monitorFiles="$2" ; shift;;
+                -v | --verbose   ) export verbose=1                ;;
+                -h | --help      ) usage                    ;  exit;;
+                * ) break;;
+        esac
+        shift
+    done
+
+    # If filename isn't passed explicitly,
+    # try to take the last argument
+    # and match for pattern *.*
+    if [[ -z ${filename+x} ]]; then
+        export filename=${filename:-"${@: -1}"}
+        export implicitFilename=1
+    fi
+    export exec=${exec:-${filename%.*}}
+    export inputfile=${inputfile:-"${exec}.in"}
+    export norun=${norun:-0}
+    export noinput=${noinput:-0}
+    export runCmd="${runCmd:-"./${exec}"}"
+
+    # Pass input file to the execution of compilation target
+    if [[ ${noinput} = 1 ]]; then
+        export inputfile=""
+    else
+        export runCmd="${runCmd} <${inputfile}"
+    fi
+    if [[ ${norun} = 1 ]]; then
+        export inputfile=""
+        export runCmd=""
+    fi
+
+    # Collect all the files, editing of which
+    # will trigger recompilation
+    if [[ -n ${monitorFiles+x} ]]; then
+        IFS=',' read -r -a monitorFiles <<< "${monitorFiles}"
+    else
+        monitorFiles=()
+    fi
+    monitorFiles+=("${filename}")
+    monitorFiles+=("${inputfile}")
+    export monitorFiles
+    # Compile command is the rest consisting of non-parsed arguments
+    export compileCmd="$*"
+}
+
+error() {
+    errorMessage=$1
+    code=$2
+    printf '\033[0;31mERROR: %s\033[0m\n' "${errorMessage}"
+    exit "${code}"
+}
+
+validate() {
+    # Fail in case of absence of the compilation command
+    if [[ -z "${compileCmd}" ]]; then
+        usage;
+        exit 1;
+    fi
+    # Fail if some files required for monitoring don't exist
+    missingFiles=()
+    for f in "${monitorFiles[@]}"; do
+        if [[ -n "${f}" && ! -f "${f}" ]]; then
+            missingFiles+=("${f}")
+        fi
+    done
+    if [[ ${#missingFiles[@]} != 0 ]]; then
+        pref="file"
+        [[ ${#missingFiles[@]} -gt 1 ]] && pref+="s"
+        msg=$(printf 'missing %s ' "${pref}"; \
+              printf '"%s" ' "${missingFiles[@]}")
+        error "${msg}" 2
+    fi
+    regex='^[^[:space:]]+\.[^[:space:]]+$'
+    # Check implicitly deduced name of the source file
+    # for *.* pattern
+    if [[ ${implicitFilename} = 1 ]]; then
+        if [[ ! "${filename}" =~ ${regex} ]]; then
+            msg=$(printf 'filename "%s" not matching *.* pattern' "${filename}")
+            error "${msg}" 3
+        fi
+    fi
+}
+
+main() {
+    export -f compileAndRun
+    parse_args "$@"
+    validate
+    printf '%s\n' "${monitorFiles[@]}" | \
+        entr -rc bash -c compileAndRun
+}
+
+main "$@"
