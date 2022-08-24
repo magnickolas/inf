@@ -3,6 +3,8 @@
 A helper script for monitoring compilation process.
 When the source files are changed, it automatically refreshes output.
 
+<img src="https://github.com/magnickolas/inf/blob/815abc8c51ec0afb5653211c557de662dad04bb6/extra/demo.gif" width="700">
+
 ## Requirements
 
 - Bash
