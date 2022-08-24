@@ -30,12 +30,12 @@ inf -m main.py -r "python3 main.py"
 
 ## Flags
 
-| Flag            |     Value format      | Description                                                                                 |
-| --------------- |:---------------------:| ------------------------------------------------------------------------------------------- |
-| -r \| --run     |       <command>       | Target execution command                                                                    |
-| -i \| --input   |        <name>         | Input file                                                                                  |
-| -m \| --monitor | <name 1>,<name 2>,... | Extra comma-separated files to trigger recompilation, the flag may be passed multiple times |
-| -n \| --noparse |           —           | Don't look for \*.\* names patterns in compile command                                      |
-| -v \| --verbose |           —           | Always output STDOUT from compilation command                                               |
-| -h \| --help    |           —           | Help message                                                                                |
-| -d \| --debug   |           —           | Print and validate parsed arguments                                                         |
+| Flag              |     Value format      | Description                                                                                 |
+| ----------------- |:---------------------:| ------------------------------------------------------------------------------------------- |
+| `-r \| --run`     |       <command>       | Target execution command                                                                    |
+| `-i \| --input`   |        <name>         | Input file                                                                                  |
+| `-m \| --monitor` | <name 1>,<name 2>,... | Extra files to trigger recompilation                                                        |
+| `-n \| --noparse` |           —           | Don't look for \*.\* names patterns in compile command                                      |
+| `-v \| --verbose` |           —           | Always output STDOUT from compilation command                                               |
+| `-h \| --help`    |           —           | Help message                                                                                |
+| `-d \| --debug`   |           —           | Print and validate parsed arguments                                                         |
