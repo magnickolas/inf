@@ -10,6 +10,15 @@ When the source files are changed, it automatically refreshes output.
 - Bash
 - [entr](https://github.com/eradman/entr)
 
+## Installation
+
+The executable is `inf`, one can copy it to `~/.local/bin` via `make install`.
+
+The following command sets target directory and name:
+```shell
+make install PREFIX=~/.local/bin EXEC=inf
+```
+
 ## Quickstart
 
 - Automatically rebuild and run a single file with provided input file
