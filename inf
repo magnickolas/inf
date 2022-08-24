@@ -54,6 +54,7 @@ parse_args() {
                 -r | --run       ) runCmd="$2"            ; shift;;
                 -i | --input     ) inputfile="$2"         ; shift;;
                 -m | --monitor   ) add_monitor_files "$2" ; shift;;
+                -n | --noparse   ) noparse=1              ; shift;;
                 -v | --verbose   ) verbose=1                     ;;
                 -d | --debug     ) debug=1                       ;;
                 -h | --help      ) usage                  ;  exit;;
@@ -83,7 +84,7 @@ parse_args() {
 
     # Search for *.* file names patterns in compile command
     # and monitor changes in such files
-    if [[ ${nocompile} != 1 ]]; then
+    if [[ ${noparse} != 1 && ${nocompile} != 1 ]]; then
         regex='^[^[:space:]]+\.[^[:space:]]+$'
         read -ra compileArgs <<<"${compileCmd}"
         for arg in "${compileArgs[@]:1}"; do
