@@ -185,7 +185,7 @@ main() {
     prepare_args "$@"
     export -f compileAndRun
     printf '%s\n' "${monitorFiles[@]}" | \
-        entr -rc bash -c compileAndRun
+        entr -c bash -c compileAndRun
 }
 
 main "$@"
