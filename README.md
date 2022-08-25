@@ -33,24 +33,23 @@ make install_deps install
 inf -r ./a.out -i a.in -- g++ -O2 a.cpp
  ```
 
-- In case of using *make* one has to provide the list of files that will trigger recompilation
+- In case of using `make` one has to provide the list of files that will trigger recompilation
 ```console
 echo src/*.cpp src/*.h | inf -r "make run" make
 ```
 
-- For interpretable languages one can use either compilation or run commands (in the second case the name of the file for monitoring should be listed explicitly)
+- For interpretable languages one can execute some linter as a compilation command
 ```console
-inf python3 main.py
-inf -m main.py -r "python3 main.py"
+inf -r "python3 main.py" mypy main.py
 ```
 
 ## Flags
 
 | Flag              |     Value format      | Description                                                                                 |
 | ----------------- |:---------------------:| ------------------------------------------------------------------------------------------- |
-| `-r \| --run`     |       <command>       | Target execution command                                                                    |
-| `-i \| --input`   |        <name>         | Input file                                                                                  |
-| `-m \| --monitor` | <name 1>,<name 2>,... | Extra files to trigger recompilation                                                        |
+| `-r \| --run`     |       `command`       | Target execution command                                                                    |
+| `-i \| --input`   |        `name`         | Input file                                                                                  |
+| `-m \| --monitor` | `name 1,<name 2>,...` | Extra files to trigger recompilation                                                        |
 | `-n \| --noparse` |           —           | Don't look for \*.\* names patterns in compile command                                      |
 | `-v \| --verbose` |           —           | Always output STDOUT from compilation command                                               |
 | `-h \| --help`    |           —           | Help message                                                                                |
