@@ -5,34 +5,41 @@ When the source files are changed, it automatically refreshes output.
 
 <img src="https://github.com/magnickolas/inf/blob/815abc8c51ec0afb5653211c557de662dad04bb6/extra/demo.gif" width="700">
 
-## Requirements
+## Dependencies
 
-- Bash
 - [entr](https://github.com/eradman/entr)
+- Bash
 
 ## Installation
 
-The executable is `inf`, one can copy it to `~/.local/bin` via `make install`.
+Clone repository
+```console
+git clone --recursive https://github.com/magnickolas/inf
+```
 
-The following command sets target directory and name:
-```shell
-make install PREFIX=~/.local/bin EXEC=inf
+Then either install dependencies manually and only install inf
+```console
+make install
+```
+or build and install them together
+```console
+make install_deps install 
 ```
 
 ## Quickstart
 
 - Automatically rebuild and run a single file with provided input file
-```shell
+```console
 inf -r ./a.out -i a.in -- g++ -O2 a.cpp
  ```
 
 - In case of using *make* one has to provide the list of files that will trigger recompilation
-```shell
+```console
 echo src/*.cpp src/*.h | inf -r "make run" make
 ```
 
 - For interpretable languages one can use either compilation or run commands (in the second case the name of the file for monitoring should be listed explicitly)
-```shell
+```console
 inf python3 main.py
 inf -m main.py -r "python3 main.py"
 ```
