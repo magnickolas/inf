@@ -7,12 +7,14 @@ usage() {
     printf '\t-i | --input   : Input file\n'
     printf '\t-m | --monitor : Extra comma-separated files to trigger recompilation\n'
     printf '\t-n | --noparse : Don'"'"'t look for *.* names patterns in compile command\n'
+    printf '\t-x | --refresh : Restart compilation immediately on files change\n'
     printf '\t-v | --verbose : Verbose compiler output\n'
     printf '\t-d | --debug   : Print and validate parsed arguments\n'
     printf '\t-h | --help    : Print this message\n'
 }
 
 compileAndRun() {
+    UNBUFFER=$(hash unbuffer &>/dev/null && printf 'unbuffer')
     if [[ ${nocompile} != 1 ]]; then
         printf '\033[1;34m[compilation: %s]\033[0m\n' "${compileCmd}"
     fi
@@ -22,27 +24,38 @@ compileAndRun() {
     # if not requested `verbose` for cleanliness
     if [[ ${norun} != 1 ]]; then
         if [[ ${nocompile} != 1 ]]; then
-            if [[ ${verbose} = 1 ]]; then
+            if [[ ${verbose} == 1 ]]; then
                 eval "${compileCmd}"
             else
-                eval "${compileCmd}" 1>/dev/null
+                { local compileStdout; \
+                  compileStdout=$(eval "${UNBUFFER} ${compileCmd}" 2>&3 3>&-); } 3>&1
             fi
-            compileCode=$?
+            local compileCode=$?
         fi
-        if [[ ${nocompile} == 1 || ${compileCode} = 0 ]]; then
+        if [[ ${nocompile} == 1 || ${compileCode} == 0 ]]; then
             printf '\033[1;32m%s\033[0m\n' "${runCmd}"
             eval "${runCmd}"
+            local runCode=$?
+            if [[ "${runCode}" != 0 ]]; then
+                printf '\033[1;31m[execution failed with %s code]\033[0m\n' "${runCode}"
+            else
+                printf '\033[1;32m[execution succeeded]\033[0m\n'
+            fi
+        elif [[ ${verbose} != 1 ]]; then
+            # Spit stdout of compilation command
+            # even in case of non-verbose output
+            # if the compilation command failed
+            printf '%s' "${compileStdout}"
         fi
     elif [[ ${nocompile} != 1 ]]; then
-        eval "${compileCmd}"
-        compileCode=$?
-        if [[ ${compileCode} = 0 ]]; then
+        if eval "${compileCmd}"; then
             printf '\033[1;32mCompilation succeeded!\033[0m\n'
         fi
     fi
 }
 
 add_monitor_files() {
+    local newFiles
     IFS=',' read -r -a newFiles <<< "$1"
     monitorFiles+=("${newFiles[@]}")
 }
@@ -55,6 +68,7 @@ parse_args() {
                 -i | --input     ) inputfile="$2"         ; shift;;
                 -m | --monitor   ) add_monitor_files "$2" ; shift;;
                 -n | --noparse   ) noparse=1              ; shift;;
+                -x | --refresh   ) refresh=1              ;      ;;
                 -v | --verbose   ) verbose=1                     ;;
                 -d | --debug     ) debug=1                       ;;
                 -h | --help      ) usage                  ;  exit;;
@@ -86,6 +100,7 @@ parse_args() {
     # and monitor changes in such files
     if [[ ${noparse} != 1 && ${nocompile} != 1 ]]; then
         regex='^[^[:space:]]+\.[^[:space:]]+$'
+        local compileArgs
         read -ra compileArgs <<<"${compileCmd}"
         for arg in "${compileArgs[@]:1}"; do
             if [[ "${arg}" =~ ${regex} && -f "${arg}" ]]; then
@@ -184,8 +199,13 @@ prepare_args() {
 main() {
     prepare_args "$@"
     export -f compileAndRun
-    printf '%s\n' "${monitorFiles[@]}" | \
-        entr -c bash -c compileAndRun
+    if [[ ${refresh} == 1 ]]; then
+        printf '%s\n' "${monitorFiles[@]}" | \
+            entr -rac bash -c compileAndRun
+    else
+        printf '%s\n' "${monitorFiles[@]}" | \
+            entr -ac bash -c compileAndRun
+    fi
 }
 
 main "$@"
