@@ -30,12 +30,12 @@ make install_deps install
 
 - Automatically rebuild and run a single file with provided input file
 ```console
-inf -r ./a.out -i a.in -- g++ -O2 a.cpp
+inf -x -r ./a.out -i a.in -- g++ -O2 a.cpp
  ```
 
 - In case of using `make` one has to provide the list of files that will trigger recompilation
 ```console
-echo src/*.cpp src/*.h | inf -r "make run" make
+echo src/*.cpp src/*.h | inf -x -r "make run" make
 ```
 
 - For interpretable languages one can execute some linter as a compilation command
@@ -51,6 +51,10 @@ inf -r "python3 main.py" mypy main.py
 | `-i \| --input`   |        `name`         | Input file                                                                                  |
 | `-m \| --monitor` | `name 1,<name 2>,...` | Extra files to trigger recompilation                                                        |
 | `-n \| --noparse` |           —           | Don't look for \*.\* names patterns in compile command                                      |
+| `-x \| --refresh` |           —           | Restart compilation immediately on files change                                             |
 | `-v \| --verbose` |           —           | Always output STDOUT from compilation command                                               |
 | `-h \| --help`    |           —           | Help message                                                                                |
 | `-d \| --debug`   |           —           | Print and validate parsed arguments                                                         |
+
+### Notes
+When `-x | --refresh` option is enabled, interactive shell is disabled. One has to provide input file name with `-i | --input` if the run command expects some input data.
