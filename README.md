@@ -12,18 +12,9 @@ When the source files are changed, it automatically refreshes output.
 
 ## Installation
 
-Clone repository
 ```console
-git clone --recursive https://github.com/magnickolas/inf
-```
-
-Then either install dependencies manually and only install inf
-```console
+git clone https://github.com/magnickolas/inf
 make install
-```
-or build and install them together
-```console
-make install_deps install 
 ```
 
 ## Quickstart

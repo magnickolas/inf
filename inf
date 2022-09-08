@@ -37,7 +37,7 @@ compileAndRun() {
             eval "${runCmd}"
             local runCode=$?
             if [[ "${runCode}" != 0 ]]; then
-                printf '\033[1;31m[execution failed with %s code]\033[0m\n' "${runCode}"
+                printf '\033[1;31m[exit code = %s]\033[0m\n' "${runCode}"
             else
                 printf '\033[1;32m[execution succeeded]\033[0m\n'
             fi

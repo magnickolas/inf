@@ -1,3 +1,0 @@
-[submodule "third-party/entr"]
-	path = third-party/entr
-	url = https://github.com/eradman/entr
