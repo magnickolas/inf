@@ -12,6 +12,12 @@ When the source files are changed, it automatically refreshes output.
 
 ## Installation
 
+Either directly download the script:
+```console
+wget https://raw.githubusercontent.com/magnickolas/inf/main/inf -O ~/.local/bin/inf && chmod +x ~/.local/bin/inf
+```
+
+Or install from source: 
 ```console
 git clone https://github.com/magnickolas/inf
 make install
