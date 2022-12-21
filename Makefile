@@ -1,8 +1,6 @@
 PREFIX:="$(HOME)/.local/bin"
 EXEC:="inf"
 
-ENTR_DIR:="./third-party/entr"
-
 .phony: all
 all:
 

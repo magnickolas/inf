@@ -57,7 +57,12 @@ compileAndRun() {
 add_monitor_files() {
     local newFiles
     IFS=',' read -r -a newFiles <<< "$1"
-    monitorFiles+=("${newFiles[@]}")
+    for file in "${newFiles[@]}"; do
+        # expand relative paths
+        file="${file/#\~/${HOME}}"
+        file="$(realpath "${file}")"
+        monitorFiles+=("${file}")
+    done
 }
 
 parse_args() {
