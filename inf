@@ -72,7 +72,7 @@ parse_args() {
                 -r | --run       ) runCmd="$2"            ; shift;;
                 -i | --input     ) inputfile="$2"         ; shift;;
                 -m | --monitor   ) add_monitor_files "$2" ; shift;;
-                -n | --noparse   ) noparse=1              ; shift;;
+                -n | --noparse   ) noparse=1              ;      ;;
                 -x | --refresh   ) refresh=1              ;      ;;
                 -v | --verbose   ) verbose=1                     ;;
                 -d | --debug     ) debug=1                       ;;
