@@ -118,7 +118,7 @@ parse_args() {
         regex='^[^[:space:]]+\.[^[:space:]]+$'
         local compileArgs
         read -ra compileArgs <<<"${compileCmd}"
-        for arg in "${compileArgs[@]:1}"; do
+        for arg in "${compileArgs[@]}"; do
             if [[ "${arg}" =~ ${regex} && -f "${arg}" ]]; then
                 monitorFiles+=("${arg}")
             fi
