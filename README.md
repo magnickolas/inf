@@ -1,6 +1,7 @@
 # inf
 
-A helper script for monitoring compilation process.
+A generic helper script for monitoring compilation process.
+
 When the source files are changed, it automatically refreshes output.
 
 <img src="https://github.com/magnickolas/inf/blob/815abc8c51ec0afb5653211c557de662dad04bb6/extra/demo.gif" width="700">
@@ -8,7 +9,6 @@ When the source files are changed, it automatically refreshes output.
 ## Dependencies
 
 - [entr](https://github.com/eradman/entr)
-- Bash
 
 ## Installation
 
@@ -17,41 +17,33 @@ Either directly download the script:
 wget https://raw.githubusercontent.com/magnickolas/inf/main/inf -O ~/.local/bin/inf && chmod +x ~/.local/bin/inf
 ```
 
-Or install from source: 
+Or install it from source: 
 ```console
 git clone https://github.com/magnickolas/inf
+cd inf
 make install
+inf -h # show help
 ```
 
-## Quickstart
+## Usage examples
 
 - Automatically rebuild and run a single file with provided input file
+    - -v flag always prints the compiler's output (even on success); useful e.g. to see if there are warnings
 ```console
-inf -x -r ./a.out -i a.in -- g++ -O2 a.cpp
- ```
-
-- In case of using `make` one has to provide the list of files that will trigger recompilation
-```console
-echo src/*.cpp src/*.h | inf -x -r "make run" make
+inf -v -i input.txt -r ./a.out -- g++ -O2 main.cpp
 ```
 
-- For interpretable languages one can execute some linter as a compilation command
+- If using `make`, we need to explicitly list the files that would trigger recompilation
+    - -x flag interrupts the current running command and restart the whole process on source files change
 ```console
-inf -r "python3 main.py" mypy main.py
+inf -x -m src/*.cpp -m src/*.h -r "make run" make
 ```
 
-## Flags
-
-| Flag              |     Value format      | Description                                                                                 |
-| ----------------- |:---------------------:| ------------------------------------------------------------------------------------------- |
-| `-r \| --run`     |       `command`       | Target execution command                                                                    |
-| `-i \| --input`   |        `name`         | Input file                                                                                  |
-| `-m \| --monitor` | `name 1,<name 2>,...` | Extra files to trigger recompilation                                                        |
-| `-n \| --noparse` |           —           | Don't look for \*.\* names patterns in compile command                                      |
-| `-x \| --refresh` |           —           | Restart compilation immediately on files change                                             |
-| `-v \| --verbose` |           —           | Always output STDOUT from compilation command                                               |
-| `-h \| --help`    |           —           | Help message                                                                                |
-| `-d \| --debug`   |           —           | Print and validate parsed arguments                                                         |
+- We can use the compile phase to run some linter (in this case it's mypy for python)
+    - -z flag is to print nothing but the output of the compile and run commands
+```console
+inf -z -r "python3 main.py" mypy main.py
+```
 
 ### Notes
-When `-x | --refresh` option is enabled, interactive shell is disabled. One has to provide input file name with `-i | --input` if the run command expects some input data.
+When `-x | --refresh` flag is passed, interactive shell is disabled due to technical reasons. If you want to enter some input, provide input file with `-i | --input`.
