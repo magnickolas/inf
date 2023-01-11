@@ -36,7 +36,7 @@ inf -v -i input.txt -r ./a.out -- g++ -O2 main.cpp
 - If using `make`, we need to explicitly list the files that would trigger recompilation
     - -x flag interrupts the current running command and restart the whole process on source files change
 ```console
-inf -x -m src/*.cpp -m src/*.h -r "make run" make
+inf -x -m src/*.cpp src/*.h -r "make run" make
 ```
 
 - We can use the compile phase to run some linter (in this case it's mypy for python)
