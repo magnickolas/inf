@@ -9,6 +9,7 @@ usage() {
     printf '\t                 (may be passed multiple times, e.g. for globs)\n'
     printf '\t-n | --noparse : Don'"'"'t look for *.* names patterns in compile command\n'
     printf '\t-x | --refresh : Restart compilation immediately on files change\n'
+    printf '\t-w | --waitkey : Wait for keypress before compilation\n'
     printf '\t-z | --zen     : Show only commands output\n'
     printf '\t-v | --verbose : Verbose compiler output\n'
     printf '\t-d | --debug   : Print and validate parsed arguments\n'
@@ -16,6 +17,10 @@ usage() {
 }
 
 compileAndRun() {
+    if [[ ${waitkey} == 1 ]]; then
+        read -p "<press key to run>" -n1 -s -r
+        printf "\n"
+    fi
     UNBUFFER=$(hash unbuffer &>/dev/null && printf 'unbuffer')
     if [[ ${nocompile} != 1 ]]; then
         if [[ ${zen} != 1 ]]; then
@@ -87,6 +92,7 @@ parse_args() {
                                    done;;
                 -n | --noparse   ) noparse=1                     ;;
                 -x | --refresh   ) refresh=1                     ;;
+                -w | --waitkey   ) waitkey=1                     ;;
                 -z | --zen       ) zen=1                         ;;
                 -v | --verbose   ) verbose=1                     ;;
                 -d | --debug     ) debug=1                       ;;
@@ -135,7 +141,7 @@ debug_print_args() {
         return
     fi
     args_list=("compileCmd" "runCmd" "inputfile"
-        "noparse" "refresh" "nocompile" "norun" "noinput" "verbose" "zen" "debug")
+        "noparse" "refresh" "nocompile" "norun" "noinput" "verbose" "waitkey" "zen" "debug")
     printf '\033[1;32mParsed arguments:\033[0m\n'
     for arg in "${args_list[@]}"; do
         if [[ -n ${!arg+x} ]]; then
@@ -204,6 +210,7 @@ export_args() {
     export runCmd
     export verbose
     export zen
+    export waitkey
 }
 
 prepare_args() {
