@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+version_info() {
+    printf 'inf 1.0.1\n'
+}
+
 usage() {
     printf 'Usage: %s [ARGS] COMPILE_CMD\n' "$(basename "$0")"
     printf '\t-r | --run      : Target execution command\n'
@@ -14,7 +18,8 @@ usage() {
     printf '\t-z | --zen      : Show only commands output\n'
     printf '\t-v | --verbose  : Verbose compiler output\n'
     printf '\t-d | --debug    : Print and validate parsed arguments\n'
-    printf '\t-h | --help     : Print this message\n'
+    printf '\t-h | --help     : Print this message and exit\n'
+    printf '\t-V | --version  : Print version info and exit\n'
 }
 
 compileAndRun() {
@@ -99,6 +104,7 @@ parse_args() {
                 -v | --verbose   ) verbose=1                     ;;
                 -d | --debug     ) debug=1                       ;;
                 -h | --help      ) usage                  ;  exit;;
+                -V | --version   ) version_info           ;  exit;;
                  - | --          )                   shift; break;;
                  -*              ) printf '\033[1;31mUnknown option: %s\033[0m\n' "$1" >&2; exit 1;;
                  *               )                          break;;
