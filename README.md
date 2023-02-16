@@ -12,7 +12,12 @@ When the source files are changed, it automatically refreshes output.
 
 ## Installation
 
-Either directly download the script:
+Either simply download the latest release:
+```console
+wget https://github.com/magnickolas/inf/releases/latest/download/inf -O ~/.local/bin/inf && chmod +x ~/.local/bin/inf
+```
+
+Or download the latest version from master branch:
 ```console
 wget https://raw.githubusercontent.com/magnickolas/inf/main/inf -O ~/.local/bin/inf && chmod +x ~/.local/bin/inf
 ```
@@ -21,8 +26,7 @@ Or install it from source:
 ```console
 git clone https://github.com/magnickolas/inf
 cd inf
-make install
-inf -h # show help
+make install prefix=~/.local exec=inf
 ```
 
 ## Usage examples
