@@ -1,13 +1,14 @@
-PREFIX:="$(HOME)/.local/bin"
-EXEC:="inf"
+prefix=/usr/local
+exec_prefix=$(prefix)
+bindir=$(exec_prefix)/bin
+exec=inf
 
 .phony: all
 all:
 
 .phony: install
 install: inf
-	cp $< $(PREFIX)/$(EXEC)
-	chmod +x $(PREFIX)/$(EXEC)
+	install -T -m755 inf $(bindir)/$(exec)
 
 .phony: check
 check: shellcheck
