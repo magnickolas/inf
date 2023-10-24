@@ -8,7 +8,7 @@ all:
 
 .phony: install
 install: inf
-	install -T -m755 inf $(bindir)/$(exec)
+	install -m755 inf $(bindir)/$(exec)
 
 .phony: check
 check: shellcheck
