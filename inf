@@ -14,6 +14,7 @@ usage() {
     printf '\t-n | --noparse  : Don'"'"'t look for *.* names patterns in compile command\n'
     printf '\t-x | --refresh  : Restart compilation immediately on files change\n'
     printf '\t-p | --postpone : Start only after the first change\n'
+    printf '\t-q | --quiet    : Suppress all compiler output\n'
     printf '\t-w | --waitkey  : Wait for keypress before compilation\n'
     printf '\t-z | --zen      : Show only commands output\n'
     printf '\t-v | --verbose  : Verbose compiler output\n'
@@ -42,8 +43,14 @@ compileAndRun() {
             if [[ ${verbose} == 1 ]]; then
                 eval "${compileCmd}"
             else
-                { local compileStdout; \
-                  compileStdout=$(eval "${UNBUFFER} ${compileCmd}" 2>&3 3>&-); } 3>&1
+                local compileStdout
+                if [[ ${quiet} == 1 ]]; then
+                    compileStdout=$(eval "${UNBUFFER} ${compileCmd}" 2>&1)
+                else
+                    {
+                        compileStdout=$(eval "${UNBUFFER} ${compileCmd}" 2>&3 3>&-)
+                    } 3>&1
+                fi
             fi
             local compileCode=$?
         fi
@@ -77,7 +84,7 @@ compileAndRun() {
 
 add_monitor_files() {
     local newFiles
-    IFS=',' read -r -a newFiles <<< "$1"
+    IFS=',' read -r -a newFiles <<<"$1"
     for file in "${newFiles[@]}"; do
         # expand relative paths
         file="${file/#\~/${HOME}}"
@@ -99,6 +106,7 @@ parse_args() {
                 -n | --noparse   ) noparse=1                     ;;
                 -x | --refresh   ) refresh=1                     ;;
                 -p | --postpone  ) postpone=1                    ;;
+                -q | --quiet     ) quiet=1 ;;
                 -w | --waitkey   ) waitkey=1                     ;;
                 -z | --zen       ) zen=1                         ;;
                 -v | --verbose   ) verbose=1                     ;;
@@ -150,7 +158,7 @@ debug_print_args() {
     fi
     args_list=("compileCmd" "runCmd" "inputfile"
         "noparse" "refresh" "nocompile" "norun" "noinput"
-        "verbose" "postpone" "waitkey" "zen" "debug")
+        "verbose" "postpone" "quiet" "waitkey" "zen" "debug")
     printf '\033[1;32mParsed arguments:\033[0m\n'
     for arg in "${args_list[@]}"; do
         if [[ -n ${!arg+x} ]]; then
@@ -206,7 +214,7 @@ validate_args() {
     if [[ ${#missingFiles[@]} != 0 ]]; then
         pref="file"
         [[ ${#missingFiles[@]} -gt 1 ]] && pref+="s"
-        msg=$(printf 'missing %s ' "${pref}"; \
+        msg=$(printf 'missing %s ' "${pref}"
               printf '"%s" ' "${missingFiles[@]}")
         error 4 "${msg}"
     fi
@@ -216,6 +224,7 @@ export_args() {
     export nocompile
     export compileCmd
     export norun
+    export quiet
     export runCmd
     export verbose
     export zen
@@ -240,10 +249,10 @@ main() {
     prepare_args "$@"
     export -f compileAndRun
     if [[ ${refresh} == 1 ]]; then
-        printf '%s\n' "${monitorFiles[@]}" | \
+        printf '%s\n' "${monitorFiles[@]}" |
             entr -rac "${ENTR_EXTRA_ARGS[@]}" bash -c compileAndRun
     else
-        printf '%s\n' "${monitorFiles[@]}" | \
+        printf '%s\n' "${monitorFiles[@]}" |
             entr -ac "${ENTR_EXTRA_ARGS[@]}" bash -c compileAndRun
     fi
 }
