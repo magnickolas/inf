@@ -14,9 +14,9 @@ jobs:
           uses: actions/checkout@v4
         - name: Install shellcheck
           uses: ludeeus/action-shellcheck@master
-        - name: Install entr
+        - name: Install entr and bats
           run: |
             sudo apt-get update
-            sudo apt-get install -y entr
+            sudo apt-get install -y entr bats
         - name: Run lint and tests
           run: make check
