@@ -260,6 +260,9 @@ export_args() {
     export verbose
     export zen
     export waitkey
+    if [[ ! -t 1 ]]; then
+        ENTR_EXTRA_ARGS+=("-n")
+    fi
     if refresh_screen; then
         ENTR_EXTRA_ARGS+=("-c")
     fi

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# set -x
 
 INF="$BATS_TEST_DIRNAME/../inf"
 ERROR_INCORRECT_ARGS=1
@@ -35,7 +36,7 @@ run_inf_wait() {
   local log="${tmpdir}/${BATS_TEST_NAME}.txt"
   "$INF" "$@" > "$log" 2>&1 &
   local pid=$!
-  wait_for_output "$log" "$pattern" 1 1 || true
+  wait_for_output "$log" "$pattern" 1 5 || true
   quit_inf "$pid"
 }
 
@@ -64,7 +65,7 @@ stop_inf() {
 }
 
 setup() {
-  tmpdir=$(mktemp -d)
+  tmpdir=$(mktemp -d) || exit 1
   cd "${tmpdir}" || exit 1
   touch main.c input.txt extra.txt
 }
@@ -173,7 +174,7 @@ teardown() {
 
 @test "run command output is printed" {
   expected=$'[compilation: echo compile]\necho run\nrun\n[execution succeeded]\n'
-  run_inf_assert "$expected" -m input.txt -r 'echo run' -- 'echo compile'
+  run_inf_assert "$expected" -m "${tmpdir}"/input.txt -r 'echo run' -- 'echo compile'
 }
 
 @test "run command output is printed in zen mode" {

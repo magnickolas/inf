@@ -6,17 +6,22 @@ on:
       - main
 
 jobs:
-  shellcheck:
-    name: Shellcheck
+  lint-and-test:
+    name: Lint and test
     runs-on: ubuntu-latest
     steps:
         - name: Checkout
           uses: actions/checkout@v4
-        - name: Install shellcheck
+        - name: Setup shellcheck
           uses: ludeeus/action-shellcheck@master
-        - name: Install entr and bats
+        - name: Setup entr
           run: |
-            sudo apt-get update
-            sudo apt-get install -y entr bats
+            git clone https://github.com/eradman/entr
+            cd entr
+            ./configure
+            make entr
+            install entr /usr/local/bin
+        - name: Setup BATS
+          uses: mig4/setup-bats@v1
         - name: Run lint and tests
           run: make check
