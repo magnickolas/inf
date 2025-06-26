@@ -11,10 +11,14 @@ install: inf
 	install -m755 inf $(bindir)/$(exec)
 
 .phony: check
-check: shellcheck
+check: shellcheck test
 	@printf '\033[0;32m>>>>>>>>>>>>>>>>\033[0m\n'
 	@printf '\033[0;32mChecks succeded!\033[0m\n'
 	@printf '\033[0;32m>>>>>>>>>>>>>>>>\033[0m\n'
+
+.phony: test
+test:
+	bats tests
 
 .phony: shellcheck
 shellcheck: inf

@@ -11,13 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
         - name: Checkout
-          uses: actions/checkout@v3
+          uses: actions/checkout@v4
         - name: Install shellcheck
+          uses: ludeeus/action-shellcheck@master
+        - name: Install entr
           run: |
-            scversion="stable"
-            wget -qO- "https://github.com/koalaman/shellcheck/releases/download/${scversion?}/shellcheck-${scversion?}.linux.x86_64.tar.xz" | tar -xJv
-            mkdir -p $HOME/.local/bin
-            cp "shellcheck-${scversion}/shellcheck" $HOME/.local/bin/shellcheck
-            echo "$HOME/.local/bin" >> $GITHUB_PATH
-        - name: Check shell code
+            sudo apt-get update
+            sudo apt-get install -y entr
+        - name: Run lint and tests
           run: make check
