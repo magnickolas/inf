@@ -1,14 +1,14 @@
 # inf
 
-A generic helper script for monitoring compilation process.
+<img height="128" alt="inf logo" src="https://raw.githubusercontent.com/magnickolas/inf/refs/heads/main/extra/logo.svg" align="left"> *Instant feedback for your development loop.*
 
-When the source files are changed, it automatically refreshes output.
+inf monitors source files and automatically executes the given compile and run commands as soon as those files change. It is essentially a wrapper around [entr][entr] that provides convenience flags for common development workflows.
 
-<img src="https://github.com/magnickolas/inf/blob/815abc8c51ec0afb5653211c557de662dad04bb6/extra/demo.gif" width="700">
+<img src="https://raw.githubusercontent.com/magnickolas/inf/refs/heads/main/extra/demo.gif" width="700">
 
 ## Dependencies
 
-- [entr](https://github.com/eradman/entr)
+- [entr][entr]
 
 ## Installation
 
@@ -51,3 +51,5 @@ inf -z -r "python3 main.py" mypy main.py
 
 ### Notes
 When `-x | --refresh` flag is passed, interactive shell is disabled due to technical reasons. If you want to enter some input, provide input file with `-i | --input`.
+
+[entr]: https://github.com/eradman/entr
