@@ -4,6 +4,7 @@
 INF="$BATS_TEST_DIRNAME/../inf"
 ERROR_INCORRECT_ARGS=1
 ERROR_NO_FILES=3
+
 ERROR_MISSING_FILES=4
 
 wait_for_output() {
@@ -154,6 +155,15 @@ teardown() {
   [[ "$output" == *"verbose=1"* ]]
 }
 
+@test "monitor flag gets comma separated args" {
+  run "$INF" -d -m input.txt,extra.txt
+  [ "$status" -eq 0 ]
+  # mon_line=$(printf '%s\n' "$output" | grep -F 'monitorFiles[*]')
+  # [[ "$mon_line" == *"input.txt"* ]]
+  # [[ "$mon_line" == *"extra2.txt"* ]]
+  [[ "$output" == *"monitorFiles[*]=${tmpdir}/input.txt ${tmpdir}/extra.txt"* ]]
+}
+
 @test "error if incorrect arguments" {
   run "$INF" -a
   [ "$status" -eq "$ERROR_INCORRECT_ARGS" ]
@@ -174,7 +184,7 @@ teardown() {
 
 @test "run command output is printed" {
   expected=$'[compilation: echo compile]\necho run\nrun\n[execution succeeded]\n'
-  run_inf_assert "$expected" -m "${tmpdir}"/input.txt -r 'echo run' -- 'echo compile'
+  run_inf_assert "$expected" -m input.txt -r 'echo run' -- 'echo compile'
 }
 
 @test "run command output is printed in zen mode" {
