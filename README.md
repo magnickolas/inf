@@ -2,7 +2,7 @@
 
 <img height="128" alt="inf logo" src="https://raw.githubusercontent.com/magnickolas/inf/refs/heads/main/extra/logo.svg" align="left"> *Instant feedback for your development loop.*
 
-inf monitors source files and automatically executes the given compile and run commands as soon as those files change. It is essentially a wrapper around [entr][entr] that provides convenience flags for common development workflows.
+inf monitors source files and executes the given compile and run commands as soon as those files change. It is essentially a wrapper around [entr][entr] that provides convenience flags for common development workflows.
 
 <img src="https://raw.githubusercontent.com/magnickolas/inf/refs/heads/main/extra/demo.gif" width="700">
 
@@ -31,25 +31,28 @@ make install prefix=~/.local exec=inf
 
 ## Usage examples
 
-- Automatically rebuild and run a single file with provided input file
-    - -v flag always prints the compiler's output (even on success); useful e.g. to see if there are warnings
+Rebuild and run if source code when `main.c` changes:
 ```console
-inf -v -i input.txt -r ./a.out -- g++ -O2 main.cpp
+inf --run ./main gcc -o main main.c
 ```
 
-- If using `make`, we need to explicitly list the files that would trigger recompilation
-    - -x flag interrupts the current running command and restart the whole process on source files change
+Pipe input into the binary when either `main.c` or `input.txt` changes:
 ```console
-inf -x -m src/*.cpp src/*.h -r "make run" make
+inf --input input.txt --run ./main gcc -o main main.c
 ```
 
-- We can use the compile phase to run some linter (in this case it's mypy for python)
-    - -z flag is to print nothing but the output of the compile and run commands
+For build systems, list every source file that should trigger a rebuild. Here the shell expands the globs and pipes them into inf (inf monitors all `*.c` and `*.h` files in `src/`):
 ```console
-inf -z -r "python3 main.py" mypy main.py
+echo src/*.c src/*.h | inf --run "make test" make -j4
+```
+
+- Run a static type checker in _zen_ mode (no meta-headers), whenever any Python file in `src/` or its subdirectories changes:
+
+```console
+inf -z mypy src/**/*.py
 ```
 
 ### Notes
-When `-x | --refresh` flag is passed, interactive shell is disabled due to technical reasons. If you want to enter some input, provide input file with `-i | --input`.
+When `-x | --refresh` is used, interactive shell is disabled due to technical reasons. If you want to pass some input, provide an input file with `-i | --input`.
 
 [entr]: https://github.com/eradman/entr
