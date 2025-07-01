@@ -1,29 +1,64 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 version_info() {
-    printf 'inf 1.1.0\n'
+    printf 'inf 1.2.0\n'
 }
 
 color_enabled() { [[ -t 1 && -z ${NO_COLOR:-} ]]; }
+
 refresh_screen() { [[ -t 1 && -z ${NO_REFRESH:-} ]]; }
 
+set_colors() {
+    export COL_BLUE="$1" COL_GREEN="$2" COL_RED="$3" COL_CYAN="$4" COL_RESET="$5"
+}
+
 usage() {
-    printf 'Usage: %s [ARGS] COMPILE_CMD\n' "$(basename "$0")"
+    printf 'Usage: %s [ARGS] [COMPILE_CMD]\n' "$(basename "$0")"
     printf '\t-r | --run      : Target execution command\n'
     printf '\t-i | --input    : Input file\n'
-    printf '\t-m | --monitor  : Extra comma-separated files to trigger recompilation\n'
-    printf '\t                  (may be passed multiple times, e.g. for globs)\n'
+    printf '\t-m | --monitor  : Comma separated list of files to trigger recompilation\n'
     printf '\t-n | --noparse  : Don'"'"'t look for *.* names patterns in compile command\n'
     printf '\t-x | --refresh  : Restart compilation immediately on files change\n'
     printf '\t-p | --postpone : Start only after the first change\n'
     printf '\t-q | --quiet    : Suppress all compiler output\n'
     printf '\t-w | --waitkey  : Wait for keypress before compilation\n'
     printf '\t-z | --zen      : Show only commands output\n'
-    printf '\t-v | --verbose  : Verbose compiler output\n'
-    printf '\t-d | --debug    : Print and validate parsed arguments\n'
+    printf '\t-v | --verbose  : Always print compiler output\n'
+    printf '\t-d | --debug    : Print the parsed arguments and exit\n'
     printf '\t-h | --help     : Print this message and exit\n'
     printf '\t-V | --version  : Print version info and exit\n'
+}
+
+run_compile() {
+    if [[ ${verbose} == 1 ]]; then
+        eval "${compileCmd}"
+    else
+        if [[ ${quiet} == 1 ]]; then
+            compileStdout=$(eval "${UNBUFFER} ${compileCmd}" 2>&1)
+        else
+            {
+                compileStdout=$(eval "${UNBUFFER} ${compileCmd}" 2>&3 3>&-)
+            } 3>&1
+        fi
+    fi
+    compileCode=$?
+    return ${compileCode}
+}
+
+run_target() {
+    if [[ ${zen} != 1 ]]; then
+        printf '%b%s%b\n' "${COL_GREEN}" "${runCmd}" "${COL_RESET}"
+    fi
+    eval "${runCmd}"
+    local runCode=$?
+    if [[ ${runCode} != 0 ]]; then
+        printf '%b[exit code = %s]%b\n' "${COL_RED}" "${runCode}" "${COL_RESET}"
+    else
+        if [[ ${zen} != 1 ]]; then
+            printf '%b[execution succeeded]%b\n' "${COL_GREEN}" "${COL_RESET}"
+        fi
+    fi
 }
 
 compileAndRun() {
@@ -32,52 +67,21 @@ compileAndRun() {
         printf "\n"
     fi
     UNBUFFER=$(hash unbuffer &>/dev/null && printf 'unbuffer')
-    if [[ ${nocompile} != 1 ]]; then
-        if [[ ${zen} != 1 ]]; then
-            printf '%b[compilation: %s]%b\n' "${COL_BLUE}" "${compileCmd}" "${COL_RESET}"
-        fi
+    if [[ ${nocompile} != 1 && ${zen} != 1 ]]; then
+        printf '%b[compilation: %s]%b\n' "${COL_BLUE}" "${compileCmd}" "${COL_RESET}"
     fi
 
-    # In case of executing compile target
-    # suppress stdout of compile command
-    # if not requested `verbose` for cleanliness
     if [[ ${norun} != 1 ]]; then
         if [[ ${nocompile} != 1 ]]; then
-            if [[ ${verbose} == 1 ]]; then
-                eval "${compileCmd}"
-            else
-                local compileStdout
-                if [[ ${quiet} == 1 ]]; then
-                    compileStdout=$(eval "${UNBUFFER} ${compileCmd}" 2>&1)
-                else
-                    {
-                        compileStdout=$(eval "${UNBUFFER} ${compileCmd}" 2>&3 3>&-)
-                    } 3>&1
-                fi
-            fi
-            local compileCode=$?
+            run_compile
         fi
         if [[ ${nocompile} == 1 || ${compileCode} == 0 ]]; then
-            if [[ ${zen} != 1 ]]; then
-                printf '%b%s%b\n' "${COL_GREEN}" "${runCmd}" "${COL_RESET}"
-            fi
-            eval "${runCmd}"
-            local runCode=$?
-            if [[ "${runCode}" != 0 ]]; then
-                printf '%b[exit code = %s]%b\n' "${COL_RED}" "${runCode}" "${COL_RESET}"
-            else
-                if [[ ${zen} != 1 ]]; then
-                    printf '%b[execution succeeded]%b\n' "${COL_GREEN}" "${COL_RESET}"
-                fi
-            fi
+            run_target
         elif [[ ${verbose} != 1 ]]; then
-            # Spit stdout of compilation command
-            # even in case of non-verbose output
-            # if the compilation command failed
             printf '%s' "${compileStdout}"
         fi
     elif [[ ${nocompile} != 1 ]]; then
-        if eval "${compileCmd}"; then
+        if run_compile; then
             if [[ ${zen} != 1 ]]; then
                 printf '%bCompilation succeeded!%b\n' "${COL_GREEN}" "${COL_RESET}"
             fi
@@ -96,6 +100,17 @@ add_monitor_files() {
     done
 }
 
+get_flag_value() {
+    local flag="$1"
+    shift
+
+    if [[ $# -eq 0 || "$1" == -* ]]; then
+        error 1 "option $flag requires a value"
+    fi
+
+    printf '%s\n' "$1"
+}
+
 parse_args() {
     noparse=0
     refresh=0
@@ -111,12 +126,9 @@ parse_args() {
     monitorFiles=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
-                -r | --run       ) runCmd="$2"            ; shift;;
-                -i | --input     ) inputfile="$2"         ; shift;;
-                -m | --monitor   ) while [[ $# -ge 2 && "$2" != -* ]]; do
-                                       add_monitor_files "$2"
-                                       shift
-                                   done;;
+                -r | --run       ) runCmd=$(get_flag_value "$@")         ; shift;;
+                -i | --input     ) inputfile=$(get_flag_value "$@")      ; shift;;
+                -m | --monitor   ) add_monitor_files "$(get_flag_value "$@")"  ; shift;;
                 -n | --noparse   ) noparse=1                     ;;
                 -x | --refresh   ) refresh=1                     ;;
                 -p | --postpone  ) postpone=1                    ;;
@@ -192,7 +204,7 @@ parse_input() {
     fi
     while read -r line; do
         for file in ${line}; do
-            monitorFiles+=("${file}")
+            add_monitor_files "${file}"
         done
     done
 }
@@ -200,7 +212,7 @@ parse_input() {
 error() {
     code=$1
     errorMessage=$2
-    printf '%bERROR: %s%b\n' "${COL_RED}" "${errorMessage}" "${COL_RESET}"
+    printf '%bERROR: %s%b\n' "${COL_RED}" "${errorMessage}" "${COL_RESET}" >&2
     exit "${code}"
 }
 
@@ -237,17 +249,9 @@ validate_args() {
 
 setup() {
     if color_enabled; then
-        export COL_BLUE='\033[1;34m' \
-        COL_GREEN='\033[1;32m' \
-        COL_RED='\033[1;31m' \
-        COL_CYAN='\033[0;34m' \
-        COL_RESET='\033[0m'
+        set_colors '\033[1;34m' '\033[1;32m' '\033[1;31m' '\033[0;34m' '\033[0m'
     else
-        export COL_BLUE='' \
-        COL_GREEN='' \
-        COL_RED='' \
-        COL_CYAN='' \
-        COL_RESET=''
+        set_colors '' '' '' '' ''
     fi
 }
 
@@ -289,7 +293,7 @@ main() {
         exit
     fi
     prepare_args "$@"
-    export -f compileAndRun
+    export -f compileAndRun run_compile run_target
     if [[ ${refresh} == 1 ]]; then
         printf '%s\n' "${monitorFiles[@]}" |
             entr -ra "${ENTR_EXTRA_ARGS[@]}" bash -c compileAndRun
