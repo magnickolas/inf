@@ -31,7 +31,7 @@ make install prefix=~/.local exec=inf
 
 ## Usage examples
 
-Rebuild and run if source code when `main.c` changes:
+Rebuild and run when `main.c` changes:
 ```console
 inf --run ./main gcc -o main main.c
 ```
