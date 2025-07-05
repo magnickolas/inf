@@ -1,10 +1,19 @@
 # inf
 
-<img height="128" alt="inf logo" src="https://raw.githubusercontent.com/magnickolas/inf/refs/heads/main/extra/logo.svg" align="left"> *Instant feedback for your development loop.*
+<img width="128" alt="inf logo" src="https://raw.githubusercontent.com/magnickolas/inf/refs/heads/main/extra/logo.svg" align="left"> 
 
-inf monitors source files and executes the given compile and run commands as soon as those files change. It is essentially a wrapper around [entr][entr] that provides convenience flags for common development workflows.
+**Instant feedback for your development loop.**
 
-<img src="https://raw.githubusercontent.com/magnickolas/inf/refs/heads/main/extra/demo.gif" width="700">
+*inf* monitors source files and executes the given compile / run commands as soon
+as those files change. It is essentially a wrapper around
+[entr](https://github.com/eradman/entr) that provides convenience flags for common
+development workflows.
+
+<br clear="left">
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/magnickolas/inf/refs/heads/main/extra/demo.gif" alt="inf demo" width="700">
+</p>
 
 ## Dependencies
 
