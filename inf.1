@@ -31,10 +31,10 @@
 inf \- instant feedback for your compile and run loop
 .SH "SYNOPSIS"
 .sp
-\fBinf\fR [\fIoptions\fR] [\fIcompile_cmd\fR]
+\fBinf\fR [\fIoptions\fR] [\fIcompile_cmd\fR\&...]
 .SH "DESCRIPTION"
 .sp
-\fBinf\fR monitors files and executes the given commands whenever they change\&. It is a small wrapper around \fBentr\fR(1) that provides convenience flags for common development workflows\&.
+\fBinf\fR monitors files and executes the given commands whenever they change\&. It provides convenience flags for common development workflows\&.
 .SH "OPTIONS"
 .PP
 \fB\-r\fR, \fB\-\-run\fR \fIrun_cmd\fR
@@ -52,7 +52,8 @@ Pipe
 \fIinput_file\fR
 to
 \fIrun_cmd\fR
-on standard input\&.
+on standard input\&. Requires
+\fB\-r\fR\&.
 .RE
 .PP
 \fB\-m\fR, \fB\-\-monitor\fR \fIfile\fR[,\fIfile\fR\&...]
@@ -68,7 +69,7 @@ Skip search for *\&.* files in
 .PP
 \fB\-x\fR, \fB\-\-refresh\fR
 .RS 4
-Recompile immediately whenever any monitored file changes (disables the interactive shell)\&.
+Recompile immediately whenever any monitored file changes\&.
 .RE
 .PP
 \fB\-p\fR, \fB\-\-postpone\fR
@@ -163,6 +164,3 @@ $ inf \-z mypy src/**/*\&.py
 .SH "AUTHOR"
 .sp
 Nikolai Oplachko
-.SH "SEE ALSO"
-.sp
-\fBentr\fR(1)

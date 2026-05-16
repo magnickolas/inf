@@ -5,9 +5,7 @@
 **Instant feedback for your development loop.**
 
 *inf* monitors source files and executes the given compile / run commands as soon
-as those files change. It is essentially a wrapper around
-[entr](https://github.com/eradman/entr) that provides convenience flags for common
-development workflows.
+as those files change.
 
 <br clear="left">
 
@@ -15,27 +13,17 @@ development workflows.
   <img src="https://raw.githubusercontent.com/magnickolas/inf/refs/heads/main/extra/demo.gif" alt="inf demo" width="700">
 </p>
 
-## Dependencies
-
-- [entr][entr]
-
 ## Installation
 
-Either simply download the latest release:
 ```console
-wget https://github.com/magnickolas/inf/releases/latest/download/inf -O ~/.local/bin/inf && chmod +x ~/.local/bin/inf
+curl -fsSL https://raw.githubusercontent.com/magnickolas/inf/main/install.sh | sh
 ```
 
-Or download the latest version from master branch:
-```console
-wget https://raw.githubusercontent.com/magnickolas/inf/main/inf -O ~/.local/bin/inf && chmod +x ~/.local/bin/inf
-```
-
-Or install it from source: 
+Or install from source:
 ```console
 git clone https://github.com/magnickolas/inf
 cd inf
-make install prefix=~/.local exec=inf
+make install prefix=~/.local
 ```
 
 ## Usage examples
@@ -60,8 +48,3 @@ echo src/*.c src/*.h | inf --run "make test" make -j4
 ```console
 inf -z mypy src/**/*.py
 ```
-
-### Notes
-When `-x | --refresh` is used, interactive shell is disabled due to technical reasons. If you want to pass some input, provide an input file with `-i | --input`.
-
-[entr]: https://github.com/eradman/entr

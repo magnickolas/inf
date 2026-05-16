@@ -11,17 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
         - name: Checkout
-          uses: actions/checkout@v4
-        - name: Setup shellcheck
-          uses: ludeeus/action-shellcheck@master
-        - name: Setup entr
-          run: |
-            git clone https://github.com/eradman/entr
-            cd entr
-            ./configure
-            make entr
-            install entr /usr/local/bin
-        - name: Setup BATS
-          uses: mig4/setup-bats@v1
+          uses: actions/checkout@v6
+        - name: Setup Rust
+          uses: dtolnay/rust-toolchain@stable
         - name: Run lint and tests
           run: make check

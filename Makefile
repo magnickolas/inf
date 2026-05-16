@@ -8,22 +8,27 @@ man1dir=$(mandir)/man1
 
 exec=inf
 man1_pages=$(exec).1
+target_dir=$(shell cargo metadata --format-version=1 --no-deps | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+release_bin=$(target_dir)/release/$(exec)
 
-.PHONY: all
-all:
+all: build
 
-.PHONY: install install-bin install-man
+build:
+	cargo build
+
+release:
+	cargo build --release
+
 install: install-bin install-man
 
-install-bin: inf
+install-bin: release
 	@mkdir -p $(DESTDIR)$(bindir)/
-	install -m755 inf $(DESTDIR)$(bindir)/$(exec)
+	install -m755 $(release_bin) $(DESTDIR)$(bindir)/$(exec)
 
 install-man: $(man1_pages)
 	@mkdir -p $(DESTDIR)$(man1dir)/
 	install -m644 $^ $(DESTDIR)$(man1dir)/
 
-.PHONY: uninstall uninstall-bin uninstall-man
 uninstall: uninstall-bin uninstall-man
 
 uninstall-bin:
@@ -32,14 +37,14 @@ uninstall-bin:
 uninstall-man:
 	rm -f $(patsubst %,$(DESTDIR)$(man1dir)/%,$(man1_pages))
 
-.PHONY: check test shellcheck
-check: shellcheck test
+check: lint test
 	@printf '\033[0;32m>>>>>>>>>>>>>>>>\033[0m\n'
 	@printf '\033[0;32mChecks succeded!\033[0m\n'
 	@printf '\033[0;32m>>>>>>>>>>>>>>>>\033[0m\n'
 
-shellcheck: inf
-	shellcheck -s bash -S style $<
+lint:
+	cargo fmt --check
+	cargo clippy --all-targets -- -D warnings
 
-test:
-	bats tests
+test: build
+	cargo test
