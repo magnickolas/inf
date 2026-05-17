@@ -24,7 +24,7 @@ enum Event {
     Quit,
 }
 
-pub async fn run(config: Config, colors: Colors) -> Result<()> {
+pub(crate) async fn run(config: Config, colors: Colors) -> Result<()> {
     let watch_paths = config.watch_paths();
     let config = Arc::new(config);
     let colors = Arc::new(colors);

@@ -27,12 +27,12 @@ const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const TERMINATE_GRACE_PERIOD: Duration = Duration::from_millis(500);
 
 #[derive(Debug)]
-pub enum RunResult {
+pub(crate) enum RunResult {
     Completed,
     Cancelled,
 }
 
-pub async fn compile_and_run(
+pub(crate) async fn compile_and_run(
     config: Arc<Config>,
     colors: Arc<Colors>,
     mut cancel: watch::Receiver<u64>,

@@ -3,16 +3,16 @@ use std::{env, io::IsTerminal};
 use crate::config::Config;
 
 #[derive(Clone, Debug)]
-pub struct Colors {
-    pub blue: &'static str,
-    pub green: &'static str,
-    pub red: &'static str,
-    pub cyan: &'static str,
-    pub reset: &'static str,
+pub(crate) struct Colors {
+    pub(crate) blue: &'static str,
+    pub(crate) green: &'static str,
+    pub(crate) red: &'static str,
+    pub(crate) cyan: &'static str,
+    pub(crate) reset: &'static str,
 }
 
 impl Colors {
-    pub fn detect() -> Self {
+    pub(crate) fn detect() -> Self {
         if std::io::stdout().is_terminal() && env::var_os("NO_COLOR").is_none() {
             Self {
                 blue: "\x1b[1;34m",
@@ -33,7 +33,7 @@ impl Colors {
     }
 }
 
-pub fn debug_print(config: &Config, colors: &Colors) {
+pub(crate) fn debug_print(config: &Config, colors: &Colors) {
     if !config.debug {
         return;
     }

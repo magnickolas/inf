@@ -10,24 +10,24 @@ use anyhow::Result;
 use crate::{cli::Cli, output::Colors};
 
 #[derive(Clone, Debug)]
-pub struct Config {
-    pub compile_cmd: Option<String>,
-    pub run_cmd: Option<String>,
-    pub input_file: Option<String>,
-    pub monitor_files: Vec<PathBuf>,
-    pub noparse: bool,
-    pub refresh: bool,
-    pub postpone: bool,
-    pub quiet: bool,
-    pub waitkey: bool,
-    pub zen: bool,
-    pub verbose: bool,
-    pub debug: bool,
-    pub clear_screen: bool,
+pub(crate) struct Config {
+    pub(crate) compile_cmd: Option<String>,
+    pub(crate) run_cmd: Option<String>,
+    pub(crate) input_file: Option<String>,
+    pub(crate) monitor_files: Vec<PathBuf>,
+    pub(crate) noparse: bool,
+    pub(crate) refresh: bool,
+    pub(crate) postpone: bool,
+    pub(crate) quiet: bool,
+    pub(crate) waitkey: bool,
+    pub(crate) zen: bool,
+    pub(crate) verbose: bool,
+    pub(crate) debug: bool,
+    pub(crate) clear_screen: bool,
 }
 
 impl Config {
-    pub fn from_cli(cli: Cli) -> Result<Self> {
+    pub(crate) fn from_cli(cli: Cli) -> Result<Self> {
         // The CLI parser keeps the compile command as trailing argv, but the
         // runtime intentionally stores a shell command string. The Bash version
         // treated the tail as one shell command, so preserving spaces here is
@@ -71,7 +71,7 @@ impl Config {
         Ok(config)
     }
 
-    pub fn add_stdin_monitor_files(&mut self) -> Result<()> {
+    pub(crate) fn add_stdin_monitor_files(&mut self) -> Result<()> {
         if io::stdin().is_terminal() {
             return Ok(());
         }
@@ -84,7 +84,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn validate(&self, colors: &Colors) -> Result<(), u8> {
+    pub(crate) fn validate(&self, colors: &Colors) -> Result<(), u8> {
         if self.quiet && self.verbose {
             return Err(error(colors, "--quiet and --verbose conflict"));
         }
@@ -118,7 +118,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn watch_paths(&self) -> Vec<PathBuf> {
+    pub(crate) fn watch_paths(&self) -> Vec<PathBuf> {
         let mut seen = HashSet::new();
         let mut paths = Vec::new();
         for file in &self.monitor_files {
