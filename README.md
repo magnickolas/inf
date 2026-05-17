@@ -16,10 +16,15 @@ as those files change.
 ## Installation
 
 ```console
+cargo install inf
+```
+
+Or via the install script:
+```console
 curl -fsSL https://raw.githubusercontent.com/magnickolas/inf/main/install.sh | sh
 ```
 
-Or install from source:
+Or build from source:
 ```console
 git clone https://github.com/magnickolas/inf
 cd inf
