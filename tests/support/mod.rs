@@ -257,6 +257,10 @@ impl PtyInf {
         .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, self.output()))
     }
 
+    pub fn wait_for_exit(&mut self, timeout: Duration) -> bool {
+        wait_until(timeout, || self.child.try_wait().expect("poll pty child")).is_some()
+    }
+
     pub fn wait_for_pid(&self, timeout: Duration) -> io::Result<u32> {
         wait_until(timeout, || pids_from_output(&self.output()).last().copied())
             .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, self.output()))

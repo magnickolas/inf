@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{self, Read, Write},
+    io::{self, Write},
     process::ExitStatus,
     process::Stdio,
     sync::Arc,
@@ -16,7 +16,7 @@ use nix::{
         signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal, killpg},
         termios::{self, SetArg, Termios},
     },
-    unistd::{Pid, tcgetpgrp, tcsetpgrp},
+    unistd::{Pid, read, tcgetpgrp, tcsetpgrp},
 };
 use tokio::sync::watch;
 use tokio::{io::AsyncReadExt, process::Command, time};
@@ -37,8 +37,8 @@ pub(crate) async fn compile_and_run(
     colors: Arc<Colors>,
     mut cancel: watch::Receiver<u64>,
 ) -> Result<RunResult> {
-    if config.waitkey {
-        wait_for_key()?;
+    if config.waitkey && !wait_for_key(&mut cancel).await? {
+        return Ok(RunResult::Cancelled);
     }
 
     if config.clear_screen {
@@ -477,11 +477,36 @@ async fn wait_for_cancel(cancel: &mut watch::Receiver<u64>, version: u64) {
     }
 }
 
-fn wait_for_key() -> Result<()> {
+async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
     print!("<press key to run>");
     io::stdout().flush()?;
+    let version = *cancel.borrow();
+    let mut stdin = libc::pollfd {
+        fd: libc::STDIN_FILENO,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    loop {
+        // SAFETY: stdin is a valid pollfd and the zero timeout never blocks.
+        let ready = unsafe { libc::poll(&mut stdin, 1, 0) };
+        if ready > 0 {
+            break;
+        }
+        if ready < 0 {
+            let err = io::Error::last_os_error();
+            if err.kind() != io::ErrorKind::Interrupted {
+                return Err(err.into());
+            }
+        }
+        tokio::select! {
+            _ = wait_for_cancel(cancel, version) => return Ok(false),
+            _ = time::sleep(CHILD_POLL_INTERVAL) => {}
+        }
+    }
     let mut buf = [0_u8; 1];
-    io::stdin().read_exact(&mut buf)?;
+    if read(io::stdin(), &mut buf)? == 0 {
+        return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
+    }
     println!();
-    Ok(())
+    Ok(true)
 }
