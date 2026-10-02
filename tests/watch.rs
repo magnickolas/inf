@@ -204,6 +204,34 @@ fn postpone_runs_after_file_change() {
 }
 
 #[test]
+fn same_size_edit_within_one_second_triggers_run() {
+    use std::{
+        fs::{File, FileTimes},
+        time::UNIX_EPOCH,
+    };
+
+    let dir = TestDir::new();
+    dir.write("input.txt", "aaaa");
+    let file = File::options()
+        .write(true)
+        .open(dir.path().join("input.txt"))
+        .unwrap();
+    let second = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    file.set_times(FileTimes::new().set_modified(second + Duration::from_millis(100)))
+        .unwrap();
+    let mut inf = RunningInf::spawn(dir.path(), &["-m", "input.txt", "-r", "echo run"]);
+    inf.wait_for_line_count_at_least("[execution succeeded]", 1, Duration::from_secs(5))
+        .unwrap();
+
+    dir.write("input.txt", "bbbb");
+    file.set_times(FileTimes::new().set_modified(second + Duration::from_millis(200)))
+        .unwrap();
+    inf.wait_for_line_count_at_least("run", 2, Duration::from_secs(5))
+        .expect("same-size edit triggers another run");
+    inf.stop();
+}
+
+#[test]
 fn multiple_monitor_flags_gather_all_files() {
     let dir = TestDir::new();
     dir.init_default_files();

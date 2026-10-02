@@ -173,6 +173,7 @@ fn matching_watched_path<'a>(path: &Path, watch_paths: &'a [PathBuf]) -> Option<
 #[derive(Copy, Clone, Eq, PartialEq)]
 struct FileStat {
     mtime: i64,
+    mtime_nsec: i64,
     size: u64,
     ino: u64,
     mode: u32,
@@ -184,6 +185,7 @@ fn file_stat(path: &Path) -> Option<FileStat> {
     let meta = path.metadata().ok()?;
     Some(FileStat {
         mtime: meta.mtime(),
+        mtime_nsec: meta.mtime_nsec(),
         size: meta.size(),
         ino: meta.ino(),
         mode: meta.mode(),
