@@ -144,13 +144,13 @@ fn waitkey_accepts_input_and_ctrl_c_at_next_prompt() {
     let dir = TestDir::new();
     dir.touch("input.txt");
     let mut inf = PtyInf::spawn(dir.path(), &["-w", "-m", "input.txt", "--", "true"]);
-    inf.wait_for_contains("<press key to run>", Duration::from_secs(5))
+    inf.wait_for_contains("<press Enter to run>", Duration::from_secs(5))
         .unwrap();
     inf.write("\n");
     inf.wait_for_contains("Compilation succeeded!", Duration::from_secs(5))
         .unwrap();
     dir.append("input.txt", "change");
-    inf.wait_for_contains("\r\n<press key to run>", Duration::from_secs(5))
+    inf.wait_for_contains("\r\n<press Enter to run>", Duration::from_secs(5))
         .unwrap();
     inf.write("\x03");
     let exited = inf.wait_for_exit(Duration::from_secs(2));

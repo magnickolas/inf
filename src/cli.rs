@@ -60,7 +60,7 @@ pub(crate) struct Cli {
     #[arg(
         short = 'w',
         long = "waitkey",
-        help = "Wait for keypress before compilation"
+        help = "Wait for Enter before compilation"
     )]
     pub(crate) waitkey: bool,
 

@@ -475,7 +475,7 @@ async fn wait_for_cancel(cancel: &mut watch::Receiver<u64>, version: u64) {
 }
 
 async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
-    print!("<press key to run>");
+    print!("<press Enter to run>");
     io::stdout().flush()?;
     let version = *cancel.borrow();
     let mut stdin = libc::pollfd {
