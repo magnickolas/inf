@@ -311,6 +311,39 @@ fn compile_failure_prevents_run() {
 }
 
 #[test]
+fn interrupt_cancels_capture_after_shell_exits() {
+    use nix::{
+        sys::signal::{Signal, kill},
+        unistd::Pid,
+    };
+
+    let dir = TestDir::new();
+    dir.init_default_files();
+    let mut inf = RunningInf::spawn(
+        dir.path(),
+        &[
+            "-m",
+            "input.txt",
+            "--",
+            "sleep 10 & echo $! > sleeper.pid; echo READY >&2; exit 0",
+        ],
+    );
+    inf.wait_for_line_count_at_least("READY", 1, Duration::from_secs(5))
+        .unwrap();
+    // Let the shell exit while its background child retains the output pipe.
+    std::thread::sleep(Duration::from_millis(200));
+    let exited = inf.interrupt_and_wait(Duration::from_secs(2));
+    let pid: i32 = std::fs::read_to_string(dir.path().join("sleeper.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    kill(Pid::from_raw(pid), Signal::SIGKILL).ok();
+    inf.stop();
+    assert!(exited, "interrupt hung waiting for captured output");
+}
+
+#[test]
 fn run_failure_prints_exit_code() {
     let dir = TestDir::new();
     dir.init_default_files();

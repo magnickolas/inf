@@ -214,14 +214,14 @@ async fn run_captured(
     let mut group = ChildGroup::spawn(cmd)?;
     let mut stdout = group.inner_mut().stdout.take();
     let mut stderr = group.inner_mut().stderr.take();
-    let stdout_task = tokio::spawn(async move {
+    let mut stdout_task = tokio::spawn(async move {
         let mut output = Vec::new();
         if let Some(out) = stdout.as_mut() {
             out.read_to_end(&mut output).await?;
         }
         Ok::<_, io::Error>(output)
     });
-    let stderr_task = tokio::spawn(async move {
+    let mut stderr_task = tokio::spawn(async move {
         let mut output = Vec::new();
         if let Some(err) = stderr.as_mut() {
             err.read_to_end(&mut output).await?;
@@ -230,10 +230,10 @@ async fn run_captured(
     });
 
     tokio::select! {
-        status = group.wait() => {
-            let status = status?;
-            let stdout = stdout_task.await??;
-            let stderr = stderr_task.await??;
+        result = async {
+            let status = group.wait().await?;
+            let stdout = (&mut stdout_task).await??;
+            let stderr = (&mut stderr_task).await??;
             if !status.success() {
                 io::stdout().write_all(&stdout)?;
                 if matches!(mode, OutputMode::CaptureBoth) {
@@ -242,9 +242,11 @@ async fn run_captured(
                 io::stdout().flush()?;
             }
             Ok(CommandResult::Finished(status))
-        }
+        } => result,
         _ = wait_for_cancel(cancel, version) => {
             group.kill().await;
+            stdout_task.abort();
+            stderr_task.abort();
             Ok(CommandResult::Cancelled)
         }
     }

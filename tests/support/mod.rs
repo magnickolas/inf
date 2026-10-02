@@ -114,11 +114,15 @@ impl RunningInf {
             return;
         }
 
-        interrupt_process(self.child.id());
-        if !wait_for_child_exit(&mut self.child, Duration::from_secs(2)) {
+        if !self.interrupt_and_wait(Duration::from_secs(2)) {
             self.child.kill().ok();
             self.child.wait().ok();
         }
+    }
+
+    pub fn interrupt_and_wait(&mut self, timeout: Duration) -> bool {
+        interrupt_process(self.child.id());
+        wait_for_child_exit(&mut self.child, timeout)
     }
 
     pub fn wait_for_line_count_at_least(
