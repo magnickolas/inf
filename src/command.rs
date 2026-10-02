@@ -375,7 +375,11 @@ impl ForegroundChild {
         tokio::pin!(deadline);
         loop {
             if self.child.try_wait()?.is_some() {
-                return Ok(());
+                // The leader can exit while descendants still need SIGKILL.
+                match self.pgid.map(|pgid| killpg(pgid, None)) {
+                    None | Some(Err(Errno::ESRCH)) => return Ok(()),
+                    Some(result) => result?,
+                }
             }
             tokio::select! {
                 _ = &mut deadline => {

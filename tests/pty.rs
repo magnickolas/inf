@@ -98,3 +98,43 @@ fn refresh_kills_shell_descendants() {
     inf.wait_for_contains("x=44", Duration::from_secs(5))
         .expect("interactive output");
 }
+
+#[test]
+fn refresh_kills_descendant_that_ignores_sigterm() {
+    use nix::{
+        errno::Errno,
+        sys::signal::{Signal, kill},
+        unistd::Pid,
+    };
+    use std::time::Instant;
+
+    let dir = TestDir::new();
+    dir.touch("input.txt");
+    let mut inf = PtyInf::spawn(
+        dir.path(),
+        &[
+            "-x",
+            "-m",
+            "input.txt",
+            "-r",
+            "bash -c 'trap \"\" TERM; echo pid=$$; sleep 10' & wait",
+        ],
+    );
+    let first_pid = inf.wait_for_pid(Duration::from_secs(5)).unwrap();
+    let restarted = trigger_until_new_pid(
+        &inf,
+        &dir.path().join("input.txt"),
+        first_pid,
+        Duration::from_secs(5),
+    );
+    let pid = Pid::from_raw(first_pid as i32);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while kill(pid, None).is_ok() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let gone = kill(pid, None) == Err(Errno::ESRCH);
+    kill(pid, Signal::SIGKILL).ok();
+    inf.stop();
+    restarted.expect("replacement command starts");
+    assert!(gone, "old descendant survived refresh");
+}
