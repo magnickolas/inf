@@ -232,6 +232,20 @@ fn same_size_edit_within_one_second_triggers_run() {
 }
 
 #[test]
+fn autodetected_path_with_parent_component_triggers_run() {
+    let dir = TestDir::new();
+    dir.init_default_files();
+    std::fs::create_dir(dir.path().join("sub")).unwrap();
+    let mut inf = RunningInf::spawn(dir.path(), &["-r", "echo run", "--", "cat sub/../main.c"]);
+    inf.wait_for_line_count_at_least("[execution succeeded]", 1, Duration::from_secs(5))
+        .unwrap();
+    dir.append("main.c", "change");
+    inf.wait_for_line_count_at_least("run", 2, Duration::from_secs(5))
+        .expect("autodetected path matches canonical filesystem events");
+    inf.stop();
+}
+
+#[test]
 fn multiple_monitor_flags_gather_all_files() {
     let dir = TestDir::new();
     dir.init_default_files();

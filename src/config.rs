@@ -129,6 +129,7 @@ impl Config {
                     .unwrap_or_else(|_| PathBuf::from("."))
                     .join(file)
             };
+            let path = path.canonicalize().unwrap_or(path);
             if seen.insert(path.clone()) {
                 paths.push(path);
             }
