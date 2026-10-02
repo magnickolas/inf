@@ -233,12 +233,9 @@ async fn run_captured(
         result = async {
             let status = group.wait().await?;
             let stdout = (&mut stdout_task).await??;
-            let stderr = (&mut stderr_task).await??;
-            if !status.success() {
+            let _stderr = (&mut stderr_task).await??;
+            if !status.success() && matches!(mode, OutputMode::CaptureStdout) {
                 io::stdout().write_all(&stdout)?;
-                if matches!(mode, OutputMode::CaptureBoth) {
-                    io::stdout().write_all(&stderr)?;
-                }
                 io::stdout().flush()?;
             }
             Ok(CommandResult::Finished(status))

@@ -129,6 +129,39 @@ fn compile_command_error_output_is_not_printed_in_quiet_mode() {
 }
 
 #[test]
+fn quiet_mode_suppresses_failed_compiler_output() {
+    use std::time::Instant;
+
+    let dir = TestDir::new();
+    dir.init_default_files();
+    let mut inf = RunningInf::spawn(
+        dir.path(),
+        &[
+            "-q",
+            "-z",
+            "-m",
+            "input.txt",
+            "-r",
+            "echo run",
+            "--",
+            "echo OUT; echo ERR >&2; touch done; exit 1",
+        ],
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !dir.path().join("done").is_file() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(dir.path().join("done").is_file(), "compiler ran");
+    std::thread::sleep(Duration::from_millis(200));
+    inf.stop();
+    assert_eq!(
+        inf.output(),
+        "",
+        "failed compiler is silent and target does not run"
+    );
+}
+
+#[test]
 fn run_command_preserves_shell_syntax() {
     let dir = TestDir::new();
     dir.init_default_files();
