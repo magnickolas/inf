@@ -394,6 +394,10 @@ impl ForegroundChild {
 impl Drop for ForegroundChild {
     fn drop(&mut self) {
         self.restore_terminal();
+        // The shell can exit before its background descendants.
+        if let Some(pgid) = self.pgid {
+            ignore_no_process(killpg(pgid, Signal::SIGKILL)).ok();
+        }
     }
 }
 

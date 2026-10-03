@@ -428,6 +428,40 @@ fn interrupt_cancels_capture_after_shell_exits() {
 }
 
 #[test]
+fn background_descendant_does_not_survive_shell_completion() {
+    use nix::{
+        errno::Errno,
+        sys::signal::{Signal, kill},
+        unistd::Pid,
+    };
+    use std::time::Instant;
+
+    let dir = TestDir::new();
+    dir.touch("input.txt");
+    let mut inf = RunningInf::spawn(
+        dir.path(),
+        &["-m", "input.txt", "-r", "sleep 30 & echo $! > sleeper.pid"],
+    );
+    inf.wait_for_line_count_at_least("[execution succeeded]", 1, Duration::from_secs(5))
+        .unwrap();
+    let pid = Pid::from_raw(
+        std::fs::read_to_string(dir.path().join("sleeper.pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while kill(pid, None).is_ok() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let gone = kill(pid, None) == Err(Errno::ESRCH);
+    kill(pid, Signal::SIGKILL).ok();
+    inf.stop();
+    assert!(gone, "background descendant survived its shell");
+}
+
+#[test]
 fn run_failure_prints_exit_code() {
     let dir = TestDir::new();
     dir.init_default_files();
