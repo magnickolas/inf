@@ -157,3 +157,39 @@ fn waitkey_accepts_input_and_ctrl_c_at_next_prompt() {
     inf.stop();
     assert!(exited, "Ctrl+C hung at the wait-key prompt");
 }
+
+#[test]
+fn waitkey_consumes_the_whole_line_before_running() {
+    let dir = TestDir::new();
+    dir.touch("input.txt");
+    let mut inf = PtyInf::spawn(
+        dir.path(),
+        &[
+            "-w",
+            "-m",
+            "input.txt",
+            "-r",
+            "read -r value; echo value=$value",
+        ],
+    );
+    inf.wait_for_contains("<press Enter to run>", Duration::from_secs(5))
+        .unwrap();
+    inf.write("abc\n");
+    inf.wait_for_contains("read -r value; echo value=$value", Duration::from_secs(5))
+        .unwrap();
+    // Text entered at the prompt must not become the target's input.
+    std::thread::sleep(Duration::from_millis(250));
+    assert!(!inf.output().contains("value=bc"), "{}", inf.output());
+    inf.write("target input\n");
+    inf.wait_for_contains("value=target input", Duration::from_secs(5))
+        .unwrap();
+    inf.wait_for_contains("[execution succeeded]", Duration::from_secs(5))
+        .unwrap();
+    dir.append("input.txt", "change");
+    inf.wait_for_contains("\r\n<press Enter to run>", Duration::from_secs(5))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(250));
+    assert_eq!(inf.output().matches("<press Enter to run>").count(), 2);
+    assert_eq!(inf.output().matches("[execution succeeded]").count(), 1);
+    inf.stop();
+}

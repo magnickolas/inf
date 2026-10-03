@@ -491,7 +491,15 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
         // SAFETY: stdin is a valid pollfd and the zero timeout never blocks.
         let ready = unsafe { libc::poll(&mut stdin, 1, 0) };
         if ready > 0 {
-            break;
+            let mut buf = [0_u8; 1];
+            if read(io::stdin(), &mut buf)? == 0 {
+                return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
+            }
+            if buf[0] == b'\n' {
+                println!();
+                return Ok(true);
+            }
+            continue;
         }
         if ready < 0 {
             let err = io::Error::last_os_error();
@@ -504,10 +512,4 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
             _ = time::sleep(CHILD_POLL_INTERVAL) => {}
         }
     }
-    let mut buf = [0_u8; 1];
-    if read(io::stdin(), &mut buf)? == 0 {
-        return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
-    }
-    println!();
-    Ok(true)
 }
