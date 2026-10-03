@@ -279,6 +279,43 @@ fn autodetected_path_with_parent_component_triggers_run() {
 }
 
 #[test]
+fn replaced_symlink_tracks_new_target_in_another_directory() {
+    use std::os::unix::fs::symlink;
+
+    let dir = TestDir::new();
+    std::fs::create_dir(dir.path().join("old")).unwrap();
+    std::fs::create_dir(dir.path().join("new")).unwrap();
+    dir.write("old/source.txt", "old\n");
+    dir.write("new/source.txt", "new\n");
+    symlink("old/source.txt", dir.path().join("link.txt")).unwrap();
+    let mut inf = RunningInf::spawn(dir.path(), &["-m", "link.txt", "-r", "cat link.txt"]);
+    inf.wait_for_line_count_at_least("old", 1, Duration::from_secs(5))
+        .unwrap();
+
+    dir.write("old/source.txt", "old edited\n");
+    inf.wait_for_line_count_at_least("old edited", 1, Duration::from_secs(5))
+        .unwrap();
+    symlink("new/source.txt", dir.path().join("replacement")).unwrap();
+    std::fs::rename(dir.path().join("replacement"), dir.path().join("link.txt")).unwrap();
+    inf.wait_for_line_count_at_least("new", 1, Duration::from_secs(5))
+        .expect("symlink replacement triggers a run");
+    dir.write("new/source.txt", "new edited\n");
+    inf.wait_for_line_count_at_least("new edited", 1, Duration::from_secs(5))
+        .expect("new target is watched");
+    inf.wait_for_line_count_at_least("[execution succeeded]", 4, Duration::from_secs(5))
+        .unwrap();
+    dir.write("old/source.txt", "old changed again\n");
+    assert_line_count_stays(&inf, "[execution succeeded]", 4, Duration::from_millis(500));
+    std::fs::remove_file(dir.path().join("new/source.txt")).unwrap();
+    inf.wait_for_line_count_at_least("[exit code = 1]", 1, Duration::from_secs(5))
+        .expect("target deletion triggers a run");
+    dir.write("new/source.txt", "recreated\n");
+    inf.wait_for_line_count_at_least("recreated", 1, Duration::from_secs(5))
+        .expect("target recreation is still watched");
+    inf.stop();
+}
+
+#[test]
 fn multiple_monitor_flags_gather_all_files() {
     let dir = TestDir::new();
     dir.init_default_files();

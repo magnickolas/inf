@@ -129,7 +129,7 @@ impl Config {
                     .unwrap_or_else(|_| PathBuf::from("."))
                     .join(file)
             };
-            let path = path.canonicalize().unwrap_or(path);
+            let path = normalize_watch_path(path);
             if seen.insert(path.clone()) {
                 paths.push(path);
             }
@@ -142,14 +142,7 @@ impl Config {
             let expanded = expand_tilde(file);
             let path = PathBuf::from(&expanded);
             if path.exists() {
-                // Existing explicit monitor paths are canonicalized to collapse
-                // aliases and keep watchexec from seeing duplicate spellings of
-                // the same file. Missing paths are left as user-facing absolute
-                // paths so validation can report the exact missing file.
-                match path.canonicalize() {
-                    Ok(path) => self.monitor_files.push(path),
-                    Err(_) => self.monitor_files.push(path),
-                }
+                self.monitor_files.push(normalize_watch_path(path));
             } else if path.is_absolute() {
                 self.monitor_files.push(path);
             } else {
@@ -176,6 +169,24 @@ impl Config {
                 self.monitor_files.push(PathBuf::from(arg));
             }
         }
+    }
+}
+
+fn normalize_watch_path(path: PathBuf) -> PathBuf {
+    // Resolve parent components without losing a replaceable symlink filename.
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => {
+            let parent = if parent.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                parent
+            };
+            parent
+                .canonicalize()
+                .map(|parent| parent.join(name))
+                .unwrap_or(path)
+        }
+        _ => path,
     }
 }
 
