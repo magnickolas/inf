@@ -265,6 +265,30 @@ fn same_size_edit_within_one_second_triggers_run() {
 }
 
 #[test]
+fn same_size_edit_with_preserved_mtime_triggers_run() {
+    use std::fs::{File, FileTimes};
+
+    let dir = TestDir::new();
+    dir.write("input.txt", "aaaa\n");
+    let path = dir.path().join("input.txt");
+    let modified = path.metadata().unwrap().modified().unwrap();
+    let mut inf = RunningInf::spawn(dir.path(), &["-m", "input.txt", "-r", "cat input.txt"]);
+    inf.wait_for_line_count_at_least("[execution succeeded]", 1, Duration::from_secs(5))
+        .unwrap();
+
+    dir.write("input.txt", "bbbb\n");
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(modified))
+        .unwrap();
+    inf.wait_for_line_count_at_least("bbbb", 1, Duration::from_secs(5))
+        .expect("content change with preserved mtime triggers a run");
+    inf.stop();
+}
+
+#[test]
 fn autodetected_path_with_parent_component_triggers_run() {
     let dir = TestDir::new();
     dir.init_default_files();

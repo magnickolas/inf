@@ -172,6 +172,8 @@ fn watched_path_changed(
 struct FileStat {
     mtime: i64,
     mtime_nsec: i64,
+    ctime: i64,
+    ctime_nsec: i64,
     size: u64,
     ino: u64,
     mode: u32,
@@ -184,6 +186,8 @@ fn file_stat(path: &Path) -> Option<FileStat> {
     Some(FileStat {
         mtime: meta.mtime(),
         mtime_nsec: meta.mtime_nsec(),
+        ctime: meta.ctime(),
+        ctime_nsec: meta.ctime_nsec(),
         size: meta.size(),
         ino: meta.ino(),
         mode: meta.mode(),
