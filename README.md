@@ -43,9 +43,9 @@ Pipe input into the binary when either `main.c` or `input.txt` changes:
 inf --input input.txt --run ./main gcc -o main main.c
 ```
 
-For build systems, list every source file that should trigger a rebuild. Here the shell expands the globs and pipes them into inf (inf monitors all `*.c` and `*.h` files in `src/`):
+For build systems, list every source file that should trigger a rebuild. The shell expands the globs and sends NUL-delimited paths to inf, preserving spaces in filenames.
 ```console
-echo src/*.c src/*.h | inf --run "make test" make -j4
+printf '%s\0' src/*.c src/*.h | inf --run "make test" make -j4
 ```
 
 - Run a static type checker in _zen_ mode whenever any Python file in `src/` or its subdirectories changes:

@@ -70,8 +70,17 @@ impl Config {
 
         let mut input = Vec::new();
         io::stdin().read_to_end(&mut input)?;
-        for token in split_words(OsStr::from_bytes(&input)) {
-            self.add_monitor_files(token);
+        if input.contains(&0) {
+            for path in input
+                .split(|&byte| byte == 0)
+                .filter(|path| !path.is_empty())
+            {
+                self.add_monitor_path(PathBuf::from(OsStr::from_bytes(path)));
+            }
+        } else {
+            for token in split_words(OsStr::from_bytes(&input)) {
+                self.add_monitor_files(token);
+            }
         }
         Ok(())
     }
@@ -134,7 +143,7 @@ impl Config {
         while let Some(byte) = bytes.next() {
             match byte {
                 b',' => {
-                    self.add_monitor_path(&path);
+                    self.add_monitor_path(expand_tilde(&path));
                     path.clear();
                 }
                 b'\\' if matches!(bytes.peek(), Some(b',' | b'\\')) => {
@@ -143,11 +152,10 @@ impl Config {
                 _ => path.push(byte),
             }
         }
-        self.add_monitor_path(&path);
+        self.add_monitor_path(expand_tilde(&path));
     }
 
-    fn add_monitor_path(&mut self, file: &[u8]) {
-        let path = expand_tilde(file);
+    fn add_monitor_path(&mut self, path: PathBuf) {
         if path.is_absolute() {
             self.monitor_files.push(path);
         } else {

@@ -310,3 +310,20 @@ fn compile_command_receives_non_utf8_argument_bytes() {
         .success()
         .stdout(bytes.as_slice());
 }
+
+#[test]
+fn nul_delimited_monitor_list_preserves_literal_filenames() {
+    let dir = TestDir::new();
+    dir.touch("main file.c");
+    dir.touch(r"header,with\backslash.h");
+    inf_in(&dir)
+        .arg("-d")
+        .write_stdin(b"main file.c\0header,with\\backslash.h\0".as_slice())
+        .timeout(std::time::Duration::from_secs(5))
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("main file.c")
+                .and(predicate::str::contains(r"header,with\backslash.h")),
+        );
+}
