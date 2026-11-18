@@ -13,7 +13,7 @@ use crate::{cli::Cli, output::Colors};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Config {
-    pub(crate) compile_cmd: Option<String>,
+    pub(crate) compile_cmd: Vec<String>,
     pub(crate) run_cmd: Option<String>,
     pub(crate) input_file: Option<PathBuf>,
     pub(crate) monitor_files: Vec<PathBuf>,
@@ -30,18 +30,8 @@ pub(crate) struct Config {
 
 impl Config {
     pub(crate) fn from_cli(cli: Cli) -> Result<Self> {
-        // The CLI parser keeps the compile command as trailing argv, but the
-        // runtime intentionally stores a shell command string. The Bash version
-        // treated the tail as one shell command, so preserving spaces here is
-        // part of command-language compatibility rather than mere formatting.
-        let compile_cmd = if cli.compile_cmd.is_empty() {
-            None
-        } else {
-            Some(cli.compile_cmd.join(" "))
-        };
-
         let mut config = Self {
-            compile_cmd,
+            compile_cmd: cli.compile_cmd,
             run_cmd: cli.run_cmd,
             input_file: cli.input_file,
             monitor_files: Vec::new(),
@@ -66,7 +56,7 @@ impl Config {
             config.monitor_files.push(input_file.clone());
         }
 
-        if !config.noparse && config.compile_cmd.is_some() {
+        if !config.noparse && !config.compile_cmd.is_empty() {
             config.add_compile_files();
         }
 
@@ -163,15 +153,13 @@ impl Config {
     }
 
     fn add_compile_files(&mut self) {
-        let Some(compile_cmd) = &self.compile_cmd else {
-            return;
+        // A shell script still uses the existing whitespace heuristic.
+        // Separate arguments already have their original boundaries.
+        let args: Vec<&str> = match self.compile_cmd.as_slice() {
+            [script] => script.split_whitespace().collect(),
+            args => args.iter().map(String::as_str).collect(),
         };
-
-        // This mirrors the old convenience heuristic, not a shell parser. It is
-        // deliberately conservative: obvious `name.ext` tokens become watched
-        // files, while shell constructs, quoted paths with spaces, response
-        // files, generated source lists, etc. must be supplied with `--monitor`.
-        let mut args = compile_cmd.split_whitespace();
+        let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             if matches!(
                 arg,

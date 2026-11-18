@@ -39,7 +39,8 @@ pub(crate) fn debug_print(config: &Config, colors: &Colors) {
     }
 
     println!("{}Parsed arguments:{}", colors.green, colors.reset);
-    if let Some(value) = &config.compile_cmd {
+    if !config.compile_cmd.is_empty() {
+        let value = config.compile_cmd.join(" ");
         println!("{}compileCmd{}={value}", colors.cyan, colors.reset);
     }
     if let Some(value) = &config.run_cmd {
@@ -62,7 +63,7 @@ pub(crate) fn debug_print(config: &Config, colors: &Colors) {
     for (name, value) in [
         ("noparse", config.noparse),
         ("refresh", config.refresh),
-        ("compile", config.compile_cmd.is_some()),
+        ("compile", !config.compile_cmd.is_empty()),
         ("run", config.run_cmd.is_some()),
         ("input", config.input_file.is_some()),
         ("verbose", config.verbose),

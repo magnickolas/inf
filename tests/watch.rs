@@ -766,3 +766,15 @@ fn invalid_tmpdir_does_not_prevent_compilation() {
         .stdout("");
     assert!(dir.path().join("compiled").is_file());
 }
+
+#[test]
+fn compiler_arguments_preserve_spaces_and_metacharacters() {
+    let dir = TestDir::new();
+    dir.write("main file;.txt", "source contents\n");
+    let output = run_until(
+        dir.path(),
+        &["-v", "--", "cat", "main file;.txt"],
+        "Compilation succeeded!",
+    );
+    assert!(output.contains("\nsource contents\n"), "{output}");
+}

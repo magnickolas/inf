@@ -57,17 +57,17 @@ pub(crate) async fn compile_and_run(
         io::stdout().flush()?;
     }
 
-    if config.compile_cmd.is_some() && !config.zen {
+    if !config.compile_cmd.is_empty() && !config.zen {
         println!(
             "{}[compilation: {}]{}",
             colors.blue,
-            config.compile_cmd.as_deref().unwrap_or(""),
+            config.compile_cmd.join(" "),
             colors.reset
         );
     }
 
     if config.run_cmd.is_some() {
-        if config.compile_cmd.is_some() {
+        if !config.compile_cmd.is_empty() {
             let compile_status = run_compile(&config, &mut cancel).await?;
             match compile_status {
                 CommandResult::Cancelled => return Ok(RunResult::Cancelled),
@@ -79,7 +79,7 @@ pub(crate) async fn compile_and_run(
         }
 
         run_target(&config, &colors, &mut cancel).await
-    } else if config.compile_cmd.is_some() {
+    } else if !config.compile_cmd.is_empty() {
         match run_compile(&config, &mut cancel).await? {
             CommandResult::Cancelled => Ok(RunResult::Cancelled),
             CommandResult::Finished(status) => {
@@ -100,23 +100,20 @@ enum CommandResult {
 }
 
 async fn run_compile(config: &Config, cancel: &mut watch::Receiver<u64>) -> Result<CommandResult> {
-    let command = config.compile_cmd.as_deref().unwrap_or("");
+    let mut cmd = Command::new("bash");
+    match config.compile_cmd.as_slice() {
+        [script] => cmd.arg("-c").arg(script),
+        args => cmd.arg("-c").arg(r#""$@""#).arg("inf").args(args),
+    };
 
-    if config.verbose {
-        // Verbose mode is intentionally not captured: the old Bash wrapper let
-        // compilers stream progress, colors, prompts, and diagnostics directly
-        // to the terminal in this mode. Treat it like a foreground command so
-        // tools that inspect their stdout/stderr fds see the same environment.
-        return run_shell(command, None, OutputMode::Inherit, cancel).await;
-    }
-
-    let mode = if config.quiet {
+    let mode = if config.verbose {
+        OutputMode::Inherit
+    } else if config.quiet {
         OutputMode::Suppress
     } else {
         OutputMode::CaptureStdout
     };
-    let result = run_shell(command, None, mode, cancel).await?;
-    Ok(result)
+    run_command(cmd, None, mode, cancel).await
 }
 
 async fn run_target(
@@ -187,22 +184,17 @@ async fn run_shell(
     mode: OutputMode,
     cancel: &mut watch::Receiver<u64>,
 ) -> Result<CommandResult> {
-    match mode {
-        OutputMode::Inherit => {
-            let cmd = shell_command(command, input, mode);
-            run_in_foreground(cmd, cancel).await
-        }
-        OutputMode::CaptureStdout | OutputMode::Suppress => {
-            let cmd = shell_command(command, input, mode);
-            run_captured(cmd, mode, cancel).await
-        }
-    }
-}
-
-fn shell_command(command: &str, input: Option<File>, mode: OutputMode) -> Command {
     let mut cmd = Command::new("bash");
     cmd.arg("-c").arg(command);
+    run_command(cmd, input, mode, cancel).await
+}
 
+async fn run_command(
+    mut cmd: Command,
+    input: Option<File>,
+    mode: OutputMode,
+    cancel: &mut watch::Receiver<u64>,
+) -> Result<CommandResult> {
     match mode {
         OutputMode::Inherit => {
             cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
@@ -219,7 +211,10 @@ fn shell_command(command: &str, input: Option<File>, mode: OutputMode) -> Comman
         cmd.stdin(Stdio::from(file));
     }
 
-    cmd
+    match mode {
+        OutputMode::Inherit => run_in_foreground(cmd, cancel).await,
+        OutputMode::CaptureStdout | OutputMode::Suppress => run_captured(cmd, mode, cancel).await,
+    }
 }
 
 async fn run_in_foreground(
