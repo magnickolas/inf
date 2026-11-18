@@ -22,20 +22,20 @@ release:
 install: install-bin install-man
 
 install-bin: release
-	@mkdir -p $(DESTDIR)$(bindir)/
-	install -m755 $(release_bin) $(DESTDIR)$(bindir)/$(exec)
+	@mkdir -p "$(DESTDIR)$(bindir)"
+	install -m755 "$(release_bin)" "$(DESTDIR)$(bindir)/$(exec)"
 
 install-man: $(man1_page)
-	@mkdir -p $(DESTDIR)$(man1dir)/
-	install -m644 $(man1_page) $(DESTDIR)$(man1dir)/$(exec).1
+	@mkdir -p "$(DESTDIR)$(man1dir)"
+	install -m644 "$(man1_page)" "$(DESTDIR)$(man1dir)/$(exec).1"
 
 uninstall: uninstall-bin uninstall-man
 
 uninstall-bin:
-	rm -f $(DESTDIR)$(bindir)/$(exec)
+	rm -f "$(DESTDIR)$(bindir)/$(exec)"
 
 uninstall-man:
-	rm -f $(DESTDIR)$(man1dir)/$(exec).1
+	rm -f "$(DESTDIR)$(man1dir)/$(exec).1"
 
 check: lint test
 	@printf '\033[0;32m>>>>>>>>>>>>>>>>\033[0m\n'
