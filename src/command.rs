@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{self, Write},
+    io::{self, Seek, Write},
     os::unix::{fs::OpenOptionsExt, process::ExitStatusExt},
     process::ExitStatus,
     process::Stdio,
@@ -21,7 +21,7 @@ use nix::{
     unistd::{Pid, read, tcgetpgrp, tcsetpgrp},
 };
 use tokio::sync::watch;
-use tokio::{io::AsyncReadExt, process::Command, time};
+use tokio::{fs, io::AsyncWriteExt, process::Command, time};
 
 use crate::{config::Config, output::Colors};
 
@@ -232,19 +232,26 @@ async fn run_captured(
     // Captured commands are not interactive, so they do not need terminal
     // foreground ownership. They still run in a process group so cancellation
     // can stop descendant processes.
+    let mut capture = if matches!(mode, OutputMode::CaptureStdout) {
+        let file = tempfile::tempfile().context("failed to create compiler output file")?;
+        Some(fs::File::from_std(file))
+    } else {
+        None
+    };
+
     let mut group = ChildGroup::spawn(cmd)?;
     let mut stdout = group.inner_mut().stdout.take();
     let mut stderr = group.inner_mut().stderr.take();
     let mut stdout_task = tokio::spawn(async move {
-        let mut output = Vec::new();
         if let Some(out) = stdout.as_mut() {
-            if matches!(mode, OutputMode::Suppress) {
-                tokio::io::copy(out, &mut tokio::io::sink()).await?;
+            if let Some(file) = capture.as_mut() {
+                tokio::io::copy(out, file).await?;
+                file.flush().await?;
             } else {
-                out.read_to_end(&mut output).await?;
+                tokio::io::copy(out, &mut tokio::io::sink()).await?;
             }
         }
-        Ok::<_, io::Error>(output)
+        Ok::<_, io::Error>(capture)
     });
     let mut stderr_task = tokio::spawn(async move {
         if let Some(err) = stderr.as_mut() {
@@ -256,11 +263,14 @@ async fn run_captured(
     tokio::select! {
         result = async {
             let status = group.wait().await?;
-            let stdout = (&mut stdout_task).await??;
+            let capture = (&mut stdout_task).await??;
             (&mut stderr_task).await??;
-            if !status.success() && matches!(mode, OutputMode::CaptureStdout) {
-                io::stdout().write_all(&stdout)?;
-                io::stdout().flush()?;
+            if !status.success() && let Some(file) = capture {
+                let mut file = file.into_std().await;
+                file.rewind()?;
+                let mut stdout = io::stdout().lock();
+                io::copy(&mut file, &mut stdout)?;
+                stdout.flush()?;
             }
             Ok(CommandResult::Finished(status))
         } => result,
