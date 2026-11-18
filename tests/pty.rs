@@ -306,3 +306,26 @@ fn waitkey_uses_terminal_after_reading_piped_monitor_paths() {
     inf.write("\x03");
     assert!(inf.wait_for_exit(timeout));
 }
+
+#[test]
+fn captured_compiler_can_open_tty_after_monitor_list_is_piped() {
+    let dir = TestDir::new();
+    dir.touch("source");
+    let mut command = portable_pty::CommandBuilder::new("bash");
+    command.cwd(dir.path());
+    command.env("INF_TEST_BIN", support::inf_bin());
+    command.args([
+        "-c",
+        r#"printf 'source\0' | "$INF_TEST_BIN" -- 'echo compiler-prompt >&2; read -r value </dev/tty; echo got:$value >&2'"#,
+    ]);
+    let mut inf = PtyInf::spawn_command(command);
+    let timeout = Duration::from_secs(5);
+    inf.wait_for_contains("\r\ncompiler-prompt\r\n", timeout)
+        .unwrap();
+    inf.write("answer\n");
+    inf.wait_for_contains("got:answer", timeout).unwrap();
+    inf.wait_for_contains("Compilation succeeded!", timeout)
+        .unwrap();
+    inf.write("\x03");
+    assert!(inf.wait_for_exit(timeout));
+}

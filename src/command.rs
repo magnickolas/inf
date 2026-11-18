@@ -643,7 +643,8 @@ enum CapturedChild {
 
 impl CapturedChild {
     fn spawn(mut cmd: Command) -> Result<Self> {
-        if io::stdin().is_terminal() && original_foreground_pgid() == Some(getpgrp()) {
+        // A compiler can open the controlling terminal even when stdin is a pipe.
+        if original_foreground_pgid() == Some(getpgrp()) {
             return spawn_foreground(cmd).map(Self::Foreground);
         }
 
