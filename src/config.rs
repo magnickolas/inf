@@ -173,7 +173,7 @@ impl Config {
         // files, generated source lists, etc. must be supplied with `--monitor`.
         let mut args = compile_cmd.split_whitespace();
         while let Some(arg) = args.next() {
-            if arg == "-o" {
+            if matches!(arg, "-o" | "-MF") {
                 // A compiler output can already exist and change on every run.
                 args.next();
                 continue;

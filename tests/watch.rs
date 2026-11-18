@@ -343,7 +343,11 @@ fn autodetection_does_not_watch_compiler_output() {
     let dir = TestDir::new();
     dir.write("main.c", "int main(void) { return 0; }\n");
     dir.touch("app.bin");
-    let mut inf = RunningInf::spawn(dir.path(), &["cc", "-o", "app.bin", "main.c"]);
+    dir.touch("deps.d");
+    let mut inf = RunningInf::spawn(
+        dir.path(),
+        &["cc", "-MMD", "-MF", "deps.d", "-o", "app.bin", "main.c"],
+    );
     let timeout = Duration::from_secs(5);
     let success = "Compilation succeeded!";
     inf.wait_for_line_count_at_least(success, 1, timeout)
