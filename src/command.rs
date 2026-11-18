@@ -67,10 +67,7 @@ pub(crate) async fn compile_and_run(
             }
         }
 
-        match run_target(&config, &colors, &mut cancel).await? {
-            CommandResult::Cancelled => Ok(RunResult::Cancelled),
-            CommandResult::Finished(_) => Ok(RunResult::Completed),
-        }
+        run_target(&config, &colors, &mut cancel).await
     } else if config.compile_cmd.is_some() {
         match run_compile(&config, &mut cancel).await? {
             CommandResult::Cancelled => Ok(RunResult::Cancelled),
@@ -115,19 +112,24 @@ async fn run_target(
     config: &Config,
     colors: &Colors,
     cancel: &mut watch::Receiver<u64>,
-) -> Result<CommandResult> {
+) -> Result<RunResult> {
     let command = config.run_cmd.as_deref().unwrap_or("");
     if !config.zen {
         println!("{}{}{}", colors.green, command, colors.reset);
     }
 
-    let result = run_shell(
-        command,
-        config.input_file.as_deref(),
-        OutputMode::Inherit,
-        cancel,
-    )
-    .await?;
+    let input = if let Some(path) = &config.input_file {
+        match File::open(path) {
+            Ok(file) => Some(file),
+            Err(err) => {
+                eprintln!("ERROR: failed to open input file {path:?}: {err}");
+                return Ok(RunResult::Completed);
+            }
+        }
+    } else {
+        None
+    };
+    let result = run_shell(command, input, OutputMode::Inherit, cancel).await?;
     if let CommandResult::Finished(status) = &result {
         if !status.success() {
             println!(
@@ -140,7 +142,10 @@ async fn run_target(
             println!("{}[execution succeeded]{}", colors.green, colors.reset);
         }
     }
-    Ok(result)
+    Ok(match result {
+        CommandResult::Cancelled => RunResult::Cancelled,
+        CommandResult::Finished(_) => RunResult::Completed,
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -152,23 +157,23 @@ enum OutputMode {
 
 async fn run_shell(
     command: &str,
-    input_file: Option<&str>,
+    input: Option<File>,
     mode: OutputMode,
     cancel: &mut watch::Receiver<u64>,
 ) -> Result<CommandResult> {
     match mode {
         OutputMode::Inherit => {
-            let cmd = shell_command(command, input_file, mode)?;
+            let cmd = shell_command(command, input, mode);
             run_in_foreground(cmd, cancel).await
         }
         OutputMode::CaptureStdout | OutputMode::CaptureBoth => {
-            let cmd = shell_command(command, input_file, mode)?;
+            let cmd = shell_command(command, input, mode);
             run_captured(cmd, mode, cancel).await
         }
     }
 }
 
-fn shell_command(command: &str, input_file: Option<&str>, mode: OutputMode) -> Result<Command> {
+fn shell_command(command: &str, input: Option<File>, mode: OutputMode) -> Command {
     let mut cmd = Command::new("bash");
     cmd.arg("-c").arg(command);
 
@@ -184,13 +189,11 @@ fn shell_command(command: &str, input_file: Option<&str>, mode: OutputMode) -> R
         }
     }
 
-    if let Some(input_file) = input_file {
-        let file = File::open(input_file)
-            .with_context(|| format!("failed to open input file {input_file:?}"))?;
+    if let Some(file) = input {
         cmd.stdin(Stdio::from(file));
     }
 
-    Ok(cmd)
+    cmd
 }
 
 async fn run_in_foreground(

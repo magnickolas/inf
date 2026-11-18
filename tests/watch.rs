@@ -204,6 +204,31 @@ fn input_file_feeds_run_command_stdin() {
 }
 
 #[test]
+fn deleted_input_file_can_be_recreated_without_restarting_inf() {
+    let dir = TestDir::new();
+    dir.write("input.txt", "original\n");
+    let mut inf = RunningInf::spawn(dir.path(), &["-i", "input.txt", "-r", "cat"]);
+    let timeout = Duration::from_secs(5);
+    inf.wait_for_line_count_at_least("original", 1, timeout)
+        .unwrap();
+
+    let path = dir.path().join("input.txt");
+    std::fs::remove_file(&path).unwrap();
+    let error = std::fs::File::open(path).unwrap_err();
+    inf.wait_for_line_count_at_least(
+        &format!("ERROR: failed to open input file \"input.txt\": {error}"),
+        1,
+        timeout,
+    )
+    .unwrap();
+
+    dir.write("input.txt", "recreated\n");
+    inf.wait_for_line_count_at_least("recreated", 1, timeout)
+        .unwrap();
+    inf.stop();
+}
+
+#[test]
 fn postpone_runs_after_file_change() {
     let dir = TestDir::new();
     dir.init_default_files();
