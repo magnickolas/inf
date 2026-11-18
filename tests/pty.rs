@@ -193,3 +193,22 @@ fn waitkey_consumes_the_whole_line_before_running() {
     assert_eq!(inf.output().matches("[execution succeeded]").count(), 1);
     inf.stop();
 }
+
+#[test]
+fn ctrl_z_ends_the_stopped_run_and_watching_continues() {
+    let dir = TestDir::new();
+    dir.touch("input.txt");
+    let mut inf = PtyInf::spawn(
+        dir.path(),
+        &["-z", "-m", "input.txt", "-r", "echo pid=$$; read -r value"],
+    );
+    let timeout = Duration::from_secs(5);
+    let first_pid = inf.wait_for_pid(timeout).unwrap();
+
+    inf.write("\x1a");
+    inf.wait_for_contains("ending this run", timeout).unwrap();
+    dir.append("input.txt", "change");
+    inf.wait_for_new_pid(first_pid, timeout).unwrap();
+    inf.write("continue\n");
+    inf.stop();
+}

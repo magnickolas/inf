@@ -1,6 +1,7 @@
 use std::{
     fs::{File, OpenOptions},
     io::{self, Write},
+    os::unix::process::ExitStatusExt,
     process::ExitStatus,
     process::Stdio,
     sync::Arc,
@@ -15,6 +16,7 @@ use nix::{
     sys::{
         signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal, killpg},
         termios::{self, SetArg, Termios},
+        wait::{WaitPidFlag, WaitStatus, waitpid},
     },
     unistd::{Pid, read, tcgetpgrp, tcsetpgrp},
 };
@@ -261,8 +263,25 @@ async fn wait_for_foreground_child(
     version: u64,
 ) -> Result<CommandResult> {
     loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok(CommandResult::Finished(status));
+        match waitpid(
+            Some(child.pgid),
+            Some(WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED),
+        ) {
+            Ok(WaitStatus::Exited(_, code)) => {
+                return Ok(CommandResult::Finished(ExitStatus::from_raw(code << 8)));
+            }
+            Ok(WaitStatus::Signaled(_, signal, core_dumped)) => {
+                let status = signal as i32 | if core_dumped { 0x80 } else { 0 };
+                return Ok(CommandResult::Finished(ExitStatus::from_raw(status)));
+            }
+            Ok(WaitStatus::Stopped(_, signal)) => {
+                child.restore_terminal();
+                eprintln!("Command stopped by {signal}, ending this run");
+                let status = child.kill().await?;
+                return Ok(CommandResult::Finished(status));
+            }
+            Ok(_) | Err(Errno::EINTR) => {}
+            Err(err) => return Err(err).context("failed to wait for foreground command"),
         }
 
         tokio::select! {
@@ -277,6 +296,9 @@ async fn wait_for_foreground_child(
 }
 
 fn spawn_foreground(mut cmd: Command) -> Result<ForegroundChild> {
+    use std::os::unix::process::CommandExt;
+
+    let cmd = cmd.as_std_mut();
     // The child must be in a separate process group so we can kill the whole
     // subtree, but a background group gets SIGTTIN on terminal reads. The child
     // claims terminal foreground itself in pre_exec — after setpgid but before
@@ -303,7 +325,7 @@ fn spawn_foreground(mut cmd: Command) -> Result<ForegroundChild> {
     cmd.process_group(0);
     let child = cmd.spawn().context("failed to spawn foreground command")?;
 
-    let pgid = child.id().map(|id| Pid::from_raw(id as i32));
+    let pgid = Pid::from_raw(child.id() as i32);
     Ok(ForegroundChild {
         child,
         pgid,
@@ -338,17 +360,13 @@ fn restore_termios(saved: &Termios) {
 }
 
 struct ForegroundChild {
-    child: tokio::process::Child,
-    pgid: Option<Pid>,
+    child: std::process::Child,
+    pgid: Pid,
     original_pgid: Option<Pid>,
     original_termios: Option<Termios>,
 }
 
 impl ForegroundChild {
-    fn try_wait(&mut self) -> Result<Option<ExitStatus>> {
-        Ok(self.child.try_wait()?)
-    }
-
     fn restore_terminal(&mut self) {
         let Some(original) = self.original_pgid.take() else {
             return;
@@ -364,31 +382,32 @@ impl ForegroundChild {
         }
     }
 
-    async fn kill(&mut self) {
-        if let Some(pgid) = self.pgid {
-            ignore_no_process(killpg(pgid, Signal::SIGKILL)).ok();
+    async fn kill(&mut self) -> Result<ExitStatus> {
+        ignore_no_process(killpg(self.pgid, Signal::SIGKILL))?;
+        loop {
+            if let Some(status) = self.child.try_wait()? {
+                return Ok(status);
+            }
+            time::sleep(CHILD_POLL_INTERVAL).await;
         }
-        self.child.kill().await.ok();
     }
 
     async fn terminate_gracefully(&mut self) -> Result<()> {
-        if let Some(pgid) = self.pgid {
-            ignore_no_process(killpg(pgid, Signal::SIGTERM))?;
-        }
+        ignore_no_process(killpg(self.pgid, Signal::SIGTERM))?;
 
         let deadline = time::sleep(TERMINATE_GRACE_PERIOD);
         tokio::pin!(deadline);
         loop {
             if self.child.try_wait()?.is_some() {
                 // The leader can exit while descendants still need SIGKILL.
-                match self.pgid.map(|pgid| killpg(pgid, None)) {
-                    None | Some(Err(Errno::ESRCH)) => return Ok(()),
-                    Some(result) => result?,
+                match killpg(self.pgid, None) {
+                    Err(Errno::ESRCH) => return Ok(()),
+                    result => result?,
                 }
             }
             tokio::select! {
                 _ = &mut deadline => {
-                    self.kill().await;
+                    self.kill().await?;
                     return Ok(());
                 }
                 _ = time::sleep(CHILD_POLL_INTERVAL) => {}
@@ -401,9 +420,7 @@ impl Drop for ForegroundChild {
     fn drop(&mut self) {
         self.restore_terminal();
         // The shell can exit before its background descendants.
-        if let Some(pgid) = self.pgid {
-            ignore_no_process(killpg(pgid, Signal::SIGKILL)).ok();
-        }
+        ignore_no_process(killpg(self.pgid, Signal::SIGKILL)).ok();
     }
 }
 
