@@ -3,7 +3,7 @@ use std::{
     env,
     ffi::{OsStr, OsString},
     io::{self, IsTerminal, Read, Write},
-    os::unix::ffi::OsStrExt,
+    os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
 };
 
@@ -168,13 +168,21 @@ impl Config {
     }
 
     fn add_compile_files(&mut self) {
-        // A shell script still uses the existing whitespace heuristic.
-        // Separate arguments already have their original boundaries.
-        let args: Vec<&OsStr> = match self.compile_cmd.as_slice() {
-            [script] => split_words(script),
-            args => args.iter().map(OsString::as_os_str).collect(),
+        // Split a script into shell words for autodetection. Bash still handles
+        // expansions and execution when the actual command runs.
+        let shell_words: Vec<OsString>;
+        let mut args = if let [script] = self.compile_cmd.as_slice() {
+            shell_words = match shlex::bytes::split(script.as_bytes()) {
+                Some(words) => words.into_iter().map(OsString::from_vec).collect(),
+                None => split_words(script)
+                    .into_iter()
+                    .map(OsStr::to_owned)
+                    .collect(),
+            };
+            shell_words.iter()
+        } else {
+            self.compile_cmd.iter()
         };
-        let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             if matches!(
                 arg.as_bytes(),

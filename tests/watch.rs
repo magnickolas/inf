@@ -933,3 +933,18 @@ fn capture_file_size_limit_does_not_prevent_running_the_target() {
         .stdout("target-ran\n")
         .stderr(predicates::str::contains("Failed to save compiler stdout"));
 }
+
+#[test]
+fn autodetects_quoted_paths_in_shell_compile_command() {
+    let dir = TestDir::new();
+    dir.write("main file.c", "original\n");
+    let mut inf = RunningInf::spawn(dir.path(), &["-v", "--", r#"cat "main file.c""#]);
+    let timeout = Duration::from_secs(5);
+    inf.wait_for_line_count_at_least("original", 1, timeout)
+        .unwrap();
+
+    dir.write("main file.c", "updated\n");
+    inf.wait_for_line_count_at_least("updated", 1, timeout)
+        .unwrap();
+    inf.stop();
+}
