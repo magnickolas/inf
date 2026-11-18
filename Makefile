@@ -7,9 +7,9 @@ mandir=$(datarootdir)/man
 man1dir=$(mandir)/man1
 
 exec=inf
-man1_pages=$(exec).1
+man1_page=inf.1
 target_dir=$(shell cargo metadata --format-version=1 --no-deps | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
-release_bin=$(target_dir)/release/$(exec)
+release_bin=$(target_dir)/release/inf
 
 all: build
 
@@ -25,9 +25,9 @@ install-bin: release
 	@mkdir -p $(DESTDIR)$(bindir)/
 	install -m755 $(release_bin) $(DESTDIR)$(bindir)/$(exec)
 
-install-man: $(man1_pages)
+install-man: $(man1_page)
 	@mkdir -p $(DESTDIR)$(man1dir)/
-	install -m644 $^ $(DESTDIR)$(man1dir)/
+	install -m644 $(man1_page) $(DESTDIR)$(man1dir)/$(exec).1
 
 uninstall: uninstall-bin uninstall-man
 
@@ -35,7 +35,7 @@ uninstall-bin:
 	rm -f $(DESTDIR)$(bindir)/$(exec)
 
 uninstall-man:
-	rm -f $(patsubst %,$(DESTDIR)$(man1dir)/%,$(man1_pages))
+	rm -f $(DESTDIR)$(man1dir)/$(exec).1
 
 check: lint test
 	@printf '\033[0;32m>>>>>>>>>>>>>>>>\033[0m\n'
