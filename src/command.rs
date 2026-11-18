@@ -28,7 +28,7 @@ use nix::{
 use tokio::sync::watch;
 use tokio::{
     fs,
-    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
     process::{ChildStderr, ChildStdout, Command},
     time,
 };
@@ -284,9 +284,13 @@ async fn run_captured(
     mode: OutputMode,
     cancel: &mut watch::Receiver<u64>,
 ) -> Result<CommandResult> {
-    let mut capture = if matches!(mode, OutputMode::CaptureStdout) {
-        match tempfile::tempfile().or_else(|_| tempfile::tempfile_in("/tmp")) {
-            Ok(file) => Some(fs::File::from_std(file)),
+    let capture = if matches!(mode, OutputMode::CaptureStdout) {
+        match capture_file_limit().and_then(|limit| {
+            tempfile::tempfile()
+                .or_else(|_| tempfile::tempfile_in("/tmp"))
+                .map(|file| (fs::File::from_std(file), limit))
+        }) {
+            Ok(capture) => Some(capture),
             Err(err) => {
                 if !write_run_output(
                     libc::STDERR_FILENO,
@@ -308,15 +312,14 @@ async fn run_captured(
     let mut child = CapturedChild::spawn(cmd)?;
     let (mut stdout, mut stderr) = child.take_output()?;
     let mut stdout_task = tokio::spawn(async move {
-        if let Some(out) = stdout.as_mut() {
-            if let Some(file) = capture.as_mut() {
-                tokio::io::copy(out, file).await?;
-                file.flush().await?;
-            } else {
-                tokio::io::copy(out, &mut tokio::io::sink()).await?;
-            }
+        let Some(out) = stdout.as_mut() else {
+            return Ok(None);
+        };
+        if let Some((file, limit)) = capture {
+            return capture_compiler_stdout(out, file, limit).await.map(Some);
         }
-        Ok::<_, io::Error>(capture)
+        tokio::io::copy(out, &mut tokio::io::sink()).await?;
+        Ok(None)
     });
     let mut stderr_task = tokio::spawn(async move {
         if let Some(err) = stderr.as_mut() {
@@ -340,15 +343,65 @@ async fn run_captured(
         }
     };
     drop(child);
-    if !status.success()
-        && let Some(file) = capture
-    {
-        tokio::select! {
-            result = replay_compiler_output(file) => result?,
-            _ = wait_for_cancel(cancel) => return Ok(CommandResult::Cancelled),
+    match capture {
+        Some(Ok(file)) if !status.success() => {
+            tokio::select! {
+                result = replay_compiler_output(file) => result?,
+                _ = wait_for_cancel(cancel) => return Ok(CommandResult::Cancelled),
+            }
         }
+        Some(Err(err)) => {
+            let written = write_run_output(
+                libc::STDERR_FILENO,
+                &format!("Failed to save compiler stdout: {err}\n"),
+                cancel,
+            )
+            .await?;
+            if !written {
+                return Ok(CommandResult::Cancelled);
+            }
+        }
+        _ => {}
     }
     Ok(CommandResult::Finished(status))
+}
+
+fn capture_file_limit() -> io::Result<u64> {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: limit points to a writable rlimit for this syscall.
+    if unsafe { libc::getrlimit(libc::RLIMIT_FSIZE, &mut limit) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(if limit.rlim_cur == libc::RLIM_INFINITY {
+        u64::MAX
+    } else {
+        limit.rlim_cur as _
+    })
+}
+
+async fn capture_compiler_stdout(
+    stdout: &mut (impl AsyncRead + Unpin),
+    mut file: fs::File,
+    limit: u64,
+) -> io::Result<io::Result<fs::File>> {
+    let saved = async {
+        // Keep spool writes below RLIMIT_FSIZE to avoid SIGXFSZ.
+        tokio::io::copy(&mut stdout.take(limit), &mut file).await?;
+        file.flush().await
+    }
+    .await;
+    // Keep draining the pipe so a spool failure cannot stop the compiler.
+    let discarded = tokio::io::copy(stdout, &mut tokio::io::sink()).await?;
+    Ok(saved.and_then(|()| {
+        if discarded == 0 {
+            Ok(file)
+        } else {
+            Err(io::Error::from_raw_os_error(libc::EFBIG))
+        }
+    }))
 }
 
 async fn replay_compiler_output(mut file: fs::File) -> io::Result<()> {
@@ -747,5 +800,23 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
             _ = wait_for_cancel(cancel) => return Ok(false),
             _ = time::sleep(CHILD_POLL_INTERVAL) => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn capture_keeps_draining_after_a_spool_write_error() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        let read_only = fs::File::open(temp.path()).await.unwrap();
+        let mut output = &[b'a'; 32 * 1024][..];
+        let capture = capture_compiler_stdout(&mut output, read_only, u64::MAX)
+            .await
+            .unwrap();
+
+        assert!(capture.is_err());
+        assert!(output.is_empty());
     }
 }

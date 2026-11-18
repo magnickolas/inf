@@ -896,3 +896,40 @@ fn blocked_missing_input_diagnostic_does_not_prevent_shutdown() {
         "shutdown was blocked by stderr: {status}"
     );
 }
+
+#[test]
+fn capture_file_size_limit_does_not_prevent_running_the_target() {
+    use std::{os::unix::process::CommandExt, process::Command};
+
+    let dir = TestDir::new();
+    dir.touch("source");
+    let mut command = Command::new(support::inf_bin());
+    command.current_dir(dir.path()).args([
+        "-z",
+        "-m",
+        "source",
+        "-r",
+        "echo target-ran; kill -TERM \"$PPID\"",
+        "--",
+        "head -c 8192 /dev/zero",
+    ]);
+    // SAFETY: The closure only adjusts the child's resource limit.
+    unsafe {
+        command.pre_exec(|| {
+            let limit = libc::rlimit {
+                rlim_cur: 512,
+                rlim_max: 512,
+            };
+            if libc::setrlimit(libc::RLIMIT_FSIZE, &limit) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    assert_cmd::Command::from_std(command)
+        .timeout(Duration::from_secs(5))
+        .assert()
+        .success()
+        .stdout("target-ran\n")
+        .stderr(predicates::str::contains("Failed to save compiler stdout"));
+}
