@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsStr,
     fs::{File, OpenOptions},
     io::{self, IsTerminal},
     os::{
@@ -60,10 +61,7 @@ pub(crate) async fn compile_and_run(
         banner.push_str(&format!(
             "{}[compilation: {}]{}\n",
             colors.blue,
-            config
-                .compile_cmd
-                .join(std::ffi::OsStr::new(" "))
-                .to_string_lossy(),
+            config.compile_cmd.join(OsStr::new(" ")).to_string_lossy(),
             colors.reset
         ));
     }
@@ -134,11 +132,16 @@ async fn run_target(
     colors: &Colors,
     cancel: &mut watch::Receiver<u64>,
 ) -> Result<RunResult> {
-    let command = config.run_cmd.as_deref().unwrap_or("");
+    let command = config.run_cmd.as_deref().unwrap_or_default();
     if !config.zen
         && !write_run_output(
             libc::STDOUT_FILENO,
-            &format!("{}{}{}\n", colors.green, command, colors.reset),
+            &format!(
+                "{}{}{}\n",
+                colors.green,
+                command.to_string_lossy(),
+                colors.reset
+            ),
             cancel,
         )
         .await?
@@ -223,7 +226,7 @@ enum OutputMode {
 }
 
 async fn run_shell(
-    command: &str,
+    command: &OsStr,
     input: Option<File>,
     mode: OutputMode,
     cancel: &mut watch::Receiver<u64>,

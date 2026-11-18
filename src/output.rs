@@ -53,10 +53,11 @@ pub(crate) fn debug_print(config: &Config, colors: &Colors) -> std::io::Result<(
         )?;
     }
     if let Some(value) = &config.run_cmd {
+        let value = value.to_string_lossy();
         let rendered = if let Some(input) = &config.input_file {
             format!("{value} <{}", input.display())
         } else {
-            value.clone()
+            value.into_owned()
         };
         writeln!(stdout, "{}runCmd{}={rendered}", colors.cyan, colors.reset)?;
     }

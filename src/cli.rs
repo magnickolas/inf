@@ -17,7 +17,7 @@ pub(crate) struct Cli {
         value_name = "RUN_CMD",
         help = "Target execution command"
     )]
-    pub(crate) run_cmd: Option<String>,
+    pub(crate) run_cmd: Option<OsString>,
 
     #[arg(
         short = 'i',

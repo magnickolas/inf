@@ -327,3 +327,19 @@ fn nul_delimited_monitor_list_preserves_literal_filenames() {
                 .and(predicate::str::contains(r"header,with\backslash.h")),
         );
 }
+
+#[test]
+fn run_script_preserves_non_utf8_bytes() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt, time::Duration};
+
+    let dir = TestDir::new();
+    dir.touch("source");
+    let script = b"printf '%s' '\xff'; kill -TERM \"$PPID\"";
+    inf_in(&dir)
+        .args(["-z", "-m", "source", "-r"])
+        .arg(OsStr::from_bytes(script))
+        .timeout(Duration::from_secs(5))
+        .assert()
+        .success()
+        .stdout(b"\xff".as_slice());
+}

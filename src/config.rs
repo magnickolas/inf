@@ -14,7 +14,7 @@ use crate::{cli::Cli, output::Colors};
 #[derive(Clone, Debug)]
 pub(crate) struct Config {
     pub(crate) compile_cmd: Vec<OsString>,
-    pub(crate) run_cmd: Option<String>,
+    pub(crate) run_cmd: Option<OsString>,
     pub(crate) input_file: Option<PathBuf>,
     pub(crate) monitor_files: Vec<PathBuf>,
     pub(crate) noparse: bool,
