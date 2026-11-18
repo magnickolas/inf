@@ -13,6 +13,8 @@ release_bin=$(target_dir)/release/inf
 
 all: build
 
+.PHONY: all build release install install-bin install-man uninstall uninstall-bin uninstall-man check lint test
+
 build:
 	cargo build
 
