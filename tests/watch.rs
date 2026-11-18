@@ -694,11 +694,20 @@ fn stdin_piped_monitor_files() {
 
 #[test]
 fn blocked_compiler_output_replay_can_be_interrupted() {
+    assert_blocked_compiler_output_can_be_interrupted(false);
+}
+
+#[test]
+fn refresh_banner_with_blocked_stdout_can_be_interrupted() {
+    assert_blocked_compiler_output_can_be_interrupted(true);
+}
+
+fn assert_blocked_compiler_output_can_be_interrupted(refresh: bool) {
     use std::{
+        io::Read,
         os::fd::AsRawFd,
         process::{Command, Stdio},
         thread,
-        time::Instant,
     };
 
     use nix::{
@@ -708,20 +717,32 @@ fn blocked_compiler_output_replay_can_be_interrupted() {
 
     let dir = TestDir::new();
     dir.touch("source");
+    let compile = "head -c 1048576 /dev/zero; exit 1";
     let mut child = Command::new(support::inf_bin())
         .current_dir(dir.path())
         .args([
-            "-z",
+            if refresh { "-x" } else { "-z" },
             "-m",
             "source",
             "--",
-            "head -c 1048576 /dev/zero; exit 1",
+            compile,
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
 
+    if refresh {
+        let banner = format!("[compilation: {compile}]\n");
+        let mut actual = vec![0; banner.len()];
+        child
+            .stdout
+            .as_mut()
+            .unwrap()
+            .read_exact(&mut actual)
+            .unwrap();
+        assert_eq!(actual, banner.as_bytes());
+    }
     let mut stdout = libc::pollfd {
         fd: child.stdout.as_ref().unwrap().as_raw_fd(),
         events: libc::POLLIN,
@@ -731,19 +752,21 @@ fn blocked_compiler_output_replay_can_be_interrupted() {
     let ready = unsafe { libc::poll(&mut stdout, 1, 5000) };
     assert_ne!(stdout.revents & libc::POLLIN, 0, "poll returned {ready}");
     thread::sleep(Duration::from_millis(200));
+    if refresh {
+        dir.write("source", "change");
+        thread::sleep(Duration::from_millis(750));
+    }
 
     kill(Pid::from_raw(child.id() as i32), Signal::SIGTERM).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while Instant::now() < deadline {
-        if let Some(status) = child.try_wait().unwrap() {
-            assert!(status.success());
-            return;
-        }
-        thread::sleep(Duration::from_millis(20));
+    let exited = support::wait_for_child_exit(&mut child, Duration::from_secs(3));
+    if !exited {
+        child.kill().unwrap();
     }
-    child.kill().unwrap();
-    child.wait().unwrap();
-    panic!("shutdown waited for the stdout pipe to be drained");
+    let status = child.wait().unwrap();
+    assert!(
+        exited && status.success(),
+        "shutdown was blocked by stdout: {status}"
+    );
 }
 
 #[test]

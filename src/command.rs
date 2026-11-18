@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{self, IsTerminal, Write},
+    io::{self, IsTerminal},
     os::{
         fd::{AsFd, AsRawFd},
         unix::{fs::OpenOptionsExt, process::ExitStatusExt},
@@ -52,19 +52,20 @@ pub(crate) async fn compile_and_run(
         return Ok(RunResult::Cancelled);
     }
 
+    let mut banner = String::new();
     if config.clear_screen {
-        write!(io::stdout(), "\x1b[2J\x1b[H")?;
-        io::stdout().flush()?;
+        banner.push_str("\x1b[2J\x1b[H");
     }
-
     if !config.compile_cmd.is_empty() && !config.zen {
-        writeln!(
-            io::stdout(),
-            "{}[compilation: {}]{}",
+        banner.push_str(&format!(
+            "{}[compilation: {}]{}\n",
             colors.blue,
             config.compile_cmd.join(" "),
             colors.reset
-        )?;
+        ));
+    }
+    if !write_run_output(&banner, &mut cancel).await? {
+        return Ok(RunResult::Cancelled);
     }
 
     if config.run_cmd.is_some() {
@@ -84,13 +85,15 @@ pub(crate) async fn compile_and_run(
         match run_compile(&config, &mut cancel).await? {
             CommandResult::Cancelled => Ok(RunResult::Cancelled),
             CommandResult::Finished(status) => {
-                if status.success() && !config.zen {
-                    writeln!(
-                        io::stdout(),
-                        "{}Compilation succeeded!{}",
-                        colors.green,
-                        colors.reset
-                    )?;
+                if status.success()
+                    && !config.zen
+                    && !write_run_output(
+                        &format!("{}Compilation succeeded!{}\n", colors.green, colors.reset),
+                        &mut cancel,
+                    )
+                    .await?
+                {
+                    return Ok(RunResult::Cancelled);
                 }
                 Ok(RunResult::Completed)
             }
@@ -128,8 +131,14 @@ async fn run_target(
     cancel: &mut watch::Receiver<u64>,
 ) -> Result<RunResult> {
     let command = config.run_cmd.as_deref().unwrap_or("");
-    if !config.zen {
-        writeln!(io::stdout(), "{}{}{}", colors.green, command, colors.reset)?;
+    if !config.zen
+        && !write_run_output(
+            &format!("{}{}{}\n", colors.green, command, colors.reset),
+            cancel,
+        )
+        .await?
+    {
+        return Ok(RunResult::Cancelled);
     }
 
     let input = if let Some(path) = &config.input_file {
@@ -143,37 +152,37 @@ async fn run_target(
     } else {
         None
     };
-    let result = run_shell(command, input, OutputMode::Inherit, cancel).await?;
-    if let CommandResult::Finished(status) = &result {
-        if let Some(number) = status.signal() {
-            let signal = Signal::try_from(number)
-                .map_or_else(|_| format!("signal {number}"), |signal| signal.to_string());
-            writeln!(
-                io::stdout(),
-                "{}[terminated by {signal}]{}",
-                colors.red,
-                colors.reset
-            )?;
-        } else if let Some(code) = status.code().filter(|&code| code != 0) {
-            writeln!(
-                io::stdout(),
-                "{}[exit code = {code}]{}",
-                colors.red,
-                colors.reset
-            )?;
-        } else if !config.zen {
-            writeln!(
-                io::stdout(),
-                "{}[execution succeeded]{}",
-                colors.green,
-                colors.reset
-            )?;
-        }
+    let CommandResult::Finished(status) =
+        run_shell(command, input, OutputMode::Inherit, cancel).await?
+    else {
+        return Ok(RunResult::Cancelled);
+    };
+    let message = if let Some(number) = status.signal() {
+        let signal = Signal::try_from(number)
+            .map_or_else(|_| format!("signal {number}"), |signal| signal.to_string());
+        Some(format!(
+            "{}[terminated by {signal}]{}\n",
+            colors.red, colors.reset
+        ))
+    } else if let Some(code) = status.code().filter(|&code| code != 0) {
+        Some(format!(
+            "{}[exit code = {code}]{}\n",
+            colors.red, colors.reset
+        ))
+    } else if !config.zen {
+        Some(format!(
+            "{}[execution succeeded]{}\n",
+            colors.green, colors.reset
+        ))
+    } else {
+        None
+    };
+    if let Some(message) = message
+        && !write_run_output(&message, cancel).await?
+    {
+        return Ok(RunResult::Cancelled);
     }
-    Ok(match result {
-        CommandResult::Cancelled => RunResult::Cancelled,
-        CommandResult::Finished(_) => RunResult::Completed,
-    })
+    Ok(RunResult::Completed)
 }
 
 fn open_run_input(path: &Path) -> io::Result<File> {
@@ -242,11 +251,10 @@ async fn run_in_foreground(
     cmd: Command,
     cancel: &mut watch::Receiver<u64>,
 ) -> Result<CommandResult> {
-    let version = *cancel.borrow();
     let mut child = spawn_foreground(cmd)?;
     tokio::select! {
         status = child.wait() => Ok(CommandResult::Finished(status?)),
-        _ = wait_for_cancel(cancel, version) => {
+        _ = wait_for_cancel(cancel) => {
             child.restore_terminal();
             child.terminate_gracefully().await?;
             Ok(CommandResult::Cancelled)
@@ -259,7 +267,6 @@ async fn run_captured(
     mode: OutputMode,
     cancel: &mut watch::Receiver<u64>,
 ) -> Result<CommandResult> {
-    let version = *cancel.borrow();
     let mut capture = if matches!(mode, OutputMode::CaptureStdout) {
         match tempfile::tempfile().or_else(|_| tempfile::tempfile_in("/tmp")) {
             Ok(file) => Some(fs::File::from_std(file)),
@@ -304,7 +311,7 @@ async fn run_captured(
             }
             Ok(CommandResult::Finished(status))
         } => result,
-        _ = wait_for_cancel(cancel, version) => {
+        _ = wait_for_cancel(cancel) => {
             child.kill().await;
             stdout_task.abort();
             stderr_task.abort();
@@ -321,19 +328,31 @@ async fn replay_compiler_output(mut file: fs::File) -> io::Result<()> {
         if len == 0 {
             return Ok(());
         }
-        let mut remaining = &buffer[..len];
-        while !remaining.is_empty() {
-            match try_write_stdout(remaining) {
-                Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
-                Ok(written) => remaining = &remaining[written..],
-                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
-                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
-                    time::sleep(CHILD_POLL_INTERVAL).await;
-                }
-                Err(err) => return Err(err),
+        write_stdout(&buffer[..len]).await?;
+    }
+}
+
+async fn write_run_output(message: &str, cancel: &mut watch::Receiver<u64>) -> io::Result<bool> {
+    tokio::select! {
+        biased;
+        _ = wait_for_cancel(cancel) => Ok(false),
+        result = write_stdout(message.as_bytes()) => result.map(|()| true),
+    }
+}
+
+async fn write_stdout(mut remaining: &[u8]) -> io::Result<()> {
+    while !remaining.is_empty() {
+        match try_write_stdout(remaining) {
+            Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+            Ok(written) => remaining = &remaining[written..],
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                time::sleep(CHILD_POLL_INTERVAL).await;
             }
+            Err(err) => return Err(err),
         }
     }
+    Ok(())
 }
 
 fn try_write_stdout(bytes: &[u8]) -> io::Result<usize> {
@@ -634,12 +653,9 @@ impl Drop for SignalActionGuard {
     }
 }
 
-async fn wait_for_cancel(cancel: &mut watch::Receiver<u64>, version: u64) {
-    while cancel.changed().await.is_ok() {
-        if *cancel.borrow() != version {
-            break;
-        }
-    }
+async fn wait_for_cancel(cancel: &mut watch::Receiver<u64>) {
+    // Each run starts at zero. Keep cancellation visible across all stages.
+    let _ = cancel.wait_for(|&version| version != 0).await;
 }
 
 async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
@@ -651,9 +667,9 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
     };
     let input = terminal.as_ref().map_or_else(|| stdin.as_fd(), File::as_fd);
 
-    write!(io::stdout(), "<press Enter to run>")?;
-    io::stdout().flush()?;
-    let version = *cancel.borrow();
+    if !write_run_output("<press Enter to run>", cancel).await? {
+        return Ok(false);
+    }
     let mut poll_fd = libc::pollfd {
         fd: input.as_raw_fd(),
         events: libc::POLLIN,
@@ -668,8 +684,7 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
                 return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
             }
             if buf[0] == b'\n' {
-                writeln!(io::stdout())?;
-                return Ok(true);
+                return Ok(write_run_output("\n", cancel).await?);
             }
             continue;
         }
@@ -680,7 +695,7 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
             }
         }
         tokio::select! {
-            _ = wait_for_cancel(cancel, version) => return Ok(false),
+            _ = wait_for_cancel(cancel) => return Ok(false),
             _ = time::sleep(CHILD_POLL_INTERVAL) => {}
         }
     }
