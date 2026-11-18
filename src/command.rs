@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     os::unix::{fs::OpenOptionsExt, process::ExitStatusExt},
     path::Path,
     process::ExitStatus,
@@ -25,7 +25,7 @@ use tokio::sync::watch;
 use tokio::{
     fs,
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
-    process::Command,
+    process::{ChildStderr, ChildStdout, Command},
     time,
 };
 
@@ -226,7 +226,14 @@ async fn run_in_foreground(
 ) -> Result<CommandResult> {
     let version = *cancel.borrow();
     let mut child = spawn_foreground(cmd)?;
-    wait_for_foreground_child(&mut child, cancel, version).await
+    tokio::select! {
+        status = child.wait() => Ok(CommandResult::Finished(status?)),
+        _ = wait_for_cancel(cancel, version) => {
+            child.restore_terminal();
+            child.terminate_gracefully().await?;
+            Ok(CommandResult::Cancelled)
+        }
+    }
 }
 
 async fn run_captured(
@@ -235,9 +242,6 @@ async fn run_captured(
     cancel: &mut watch::Receiver<u64>,
 ) -> Result<CommandResult> {
     let version = *cancel.borrow();
-    // Captured commands are not interactive, so they do not need terminal
-    // foreground ownership. They still run in a process group so cancellation
-    // can stop descendant processes.
     let mut capture = if matches!(mode, OutputMode::CaptureStdout) {
         match tempfile::tempfile().or_else(|_| tempfile::tempfile_in("/tmp")) {
             Ok(file) => Some(fs::File::from_std(file)),
@@ -251,9 +255,8 @@ async fn run_captured(
         None
     };
 
-    let mut group = ChildGroup::spawn(cmd)?;
-    let mut stdout = group.inner_mut().stdout.take();
-    let mut stderr = group.inner_mut().stderr.take();
+    let mut child = CapturedChild::spawn(cmd)?;
+    let (mut stdout, mut stderr) = child.take_output()?;
     let mut stdout_task = tokio::spawn(async move {
         if let Some(out) = stdout.as_mut() {
             if let Some(file) = capture.as_mut() {
@@ -274,16 +277,17 @@ async fn run_captured(
 
     tokio::select! {
         result = async {
-            let status = group.wait().await?;
+            let status = child.wait().await?;
             let capture = (&mut stdout_task).await??;
             (&mut stderr_task).await??;
+            child.restore_terminal();
             if !status.success() && let Some(file) = capture {
                 replay_compiler_output(file).await?;
             }
             Ok(CommandResult::Finished(status))
         } => result,
         _ = wait_for_cancel(cancel, version) => {
-            group.kill().await;
+            child.kill().await;
             stdout_task.abort();
             stderr_task.abort();
             Ok(CommandResult::Cancelled)
@@ -340,44 +344,6 @@ fn try_write_stdout(bytes: &[u8]) -> io::Result<usize> {
     }
 }
 
-async fn wait_for_foreground_child(
-    child: &mut ForegroundChild,
-    cancel: &mut watch::Receiver<u64>,
-    version: u64,
-) -> Result<CommandResult> {
-    loop {
-        match waitpid(
-            Some(child.pgid),
-            Some(WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED),
-        ) {
-            Ok(WaitStatus::Exited(_, code)) => {
-                return Ok(CommandResult::Finished(ExitStatus::from_raw(code << 8)));
-            }
-            Ok(WaitStatus::Signaled(_, signal, core_dumped)) => {
-                let status = signal as i32 | if core_dumped { 0x80 } else { 0 };
-                return Ok(CommandResult::Finished(ExitStatus::from_raw(status)));
-            }
-            Ok(WaitStatus::Stopped(_, signal)) => {
-                child.restore_terminal();
-                eprintln!("Command stopped by {signal}, ending this run");
-                let status = child.kill().await?;
-                return Ok(CommandResult::Finished(status));
-            }
-            Ok(_) | Err(Errno::EINTR) => {}
-            Err(err) => return Err(err).context("failed to wait for foreground command"),
-        }
-
-        tokio::select! {
-            _ = wait_for_cancel(cancel, version) => {
-                child.restore_terminal();
-                child.terminate_gracefully().await?;
-                return Ok(CommandResult::Cancelled);
-            }
-            _ = time::sleep(CHILD_POLL_INTERVAL) => {}
-        }
-    }
-}
-
 fn spawn_foreground(mut cmd: Command) -> Result<ForegroundChild> {
     use std::os::unix::process::CommandExt;
 
@@ -415,6 +381,7 @@ fn spawn_foreground(mut cmd: Command) -> Result<ForegroundChild> {
     Ok(ForegroundChild {
         child,
         pgid,
+        status: None,
         original_pgid,
         original_termios,
     })
@@ -448,11 +415,37 @@ fn restore_termios(saved: &Termios) {
 struct ForegroundChild {
     child: std::process::Child,
     pgid: Pid,
+    status: Option<ExitStatus>,
     original_pgid: Option<Pid>,
     original_termios: Option<Termios>,
 }
 
 impl ForegroundChild {
+    async fn wait(&mut self) -> Result<ExitStatus> {
+        let status = loop {
+            match waitpid(
+                Some(self.pgid),
+                Some(WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED),
+            ) {
+                Ok(WaitStatus::Exited(_, code)) => break ExitStatus::from_raw(code << 8),
+                Ok(WaitStatus::Signaled(_, signal, core_dumped)) => {
+                    let raw = signal as i32 | if core_dumped { 0x80 } else { 0 };
+                    break ExitStatus::from_raw(raw);
+                }
+                Ok(WaitStatus::Stopped(_, signal)) => {
+                    self.restore_terminal();
+                    eprintln!("Command stopped by {signal}, ending this run");
+                    break self.kill().await?;
+                }
+                Ok(_) | Err(Errno::EINTR) => {}
+                Err(err) => return Err(err).context("failed to wait for foreground command"),
+            }
+            time::sleep(CHILD_POLL_INTERVAL).await;
+        };
+        self.status = Some(status);
+        Ok(status)
+    }
+
     fn restore_terminal(&mut self) {
         let Some(original) = self.original_pgid.take() else {
             return;
@@ -470,6 +463,9 @@ impl ForegroundChild {
 
     async fn kill(&mut self) -> Result<ExitStatus> {
         ignore_no_process(killpg(self.pgid, Signal::SIGKILL))?;
+        if let Some(status) = self.status {
+            return Ok(status);
+        }
         loop {
             if let Some(status) = self.child.try_wait()? {
                 return Ok(status);
@@ -510,30 +506,71 @@ impl Drop for ForegroundChild {
     }
 }
 
-struct ChildGroup {
-    child: AsyncGroupChild,
+enum CapturedChild {
+    Foreground(ForegroundChild),
+    Background(AsyncGroupChild),
 }
 
-impl ChildGroup {
+impl CapturedChild {
     fn spawn(mut cmd: Command) -> Result<Self> {
+        if io::stdin().is_terminal() && original_foreground_pgid() == Some(getpgrp()) {
+            return spawn_foreground(cmd).map(Self::Foreground);
+        }
+
         let child = cmd
             .group()
             .kill_on_drop(true)
             .spawn()
             .context("failed to spawn command")?;
-        Ok(Self { child })
+        Ok(Self::Background(child))
     }
 
-    fn inner_mut(&mut self) -> &mut tokio::process::Child {
-        self.child.inner()
+    fn take_output(&mut self) -> io::Result<(Option<ChildStdout>, Option<ChildStderr>)> {
+        match self {
+            Self::Foreground(child) => Ok((
+                child
+                    .child
+                    .stdout
+                    .take()
+                    .map(ChildStdout::from_std)
+                    .transpose()?,
+                child
+                    .child
+                    .stderr
+                    .take()
+                    .map(ChildStderr::from_std)
+                    .transpose()?,
+            )),
+            Self::Background(child) => {
+                let child = child.inner();
+                Ok((child.stdout.take(), child.stderr.take()))
+            }
+        }
     }
 
     async fn wait(&mut self) -> Result<ExitStatus> {
-        Ok(self.child.wait().await?)
+        match self {
+            Self::Foreground(child) => child.wait().await,
+            Self::Background(child) => Ok(child.wait().await?),
+        }
+    }
+
+    fn restore_terminal(&mut self) {
+        if let Self::Foreground(child) = self {
+            child.restore_terminal();
+        }
     }
 
     async fn kill(&mut self) {
-        self.child.kill().await.ok();
+        self.restore_terminal();
+        match self {
+            Self::Foreground(child) => {
+                let _ = child.kill().await;
+            }
+            Self::Background(child) => {
+                let _ = child.kill().await;
+            }
+        }
     }
 }
 

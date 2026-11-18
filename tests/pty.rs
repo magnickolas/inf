@@ -259,3 +259,28 @@ fn background_watcher_leaves_the_shell_in_the_foreground() {
         .find(|line| line.starts_with("shell="));
     assert!(child.wait().unwrap().success(), "{output:?}");
 }
+
+#[test]
+fn default_compiler_capture_allows_terminal_input() {
+    let dir = TestDir::new();
+    dir.touch("source");
+    let mut inf = PtyInf::spawn(
+        dir.path(),
+        &[
+            "-z",
+            "-m",
+            "source",
+            "-r",
+            "echo target-ran",
+            "--",
+            "echo compiler-ready >&2; read -r value; echo captured; echo accepted:$value >&2",
+        ],
+    );
+    let timeout = Duration::from_secs(5);
+    inf.wait_for_contains("compiler-ready\r\n", timeout)
+        .unwrap();
+    inf.write("answer\n");
+    inf.wait_for_contains("accepted:answer", timeout).unwrap();
+    let output = inf.wait_for_contains("target-ran", timeout).unwrap();
+    assert!(!output.contains("captured"));
+}
