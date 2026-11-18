@@ -212,3 +212,50 @@ fn ctrl_z_ends_the_stopped_run_and_watching_continues() {
     inf.write("continue\n");
     inf.stop();
 }
+
+#[test]
+fn background_watcher_leaves_the_shell_in_the_foreground() {
+    use std::io::{BufRead, BufReader};
+
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+
+    let dir = TestDir::new();
+    dir.touch("source");
+    let pair = native_pty_system()
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    let mut command = CommandBuilder::new("bash");
+    command.cwd(dir.path());
+    command.env("INF_TEST_BIN", support::inf_bin());
+    command.args([
+        "-c",
+        r#"
+            set -m
+            before=$(ps -o tpgid= -p "$$")
+            "$INF_TEST_BIN" -z -m source -r 'touch ready; sleep 5' &
+            watcher=$!
+            trap 'kill -TERM "$watcher" 2>/dev/null; wait "$watcher" 2>/dev/null' EXIT
+
+            # Stay in the shell's group while waiting for the target to start.
+            until [[ -f ready || $SECONDS -ge 4 ]]; do :; done
+            [[ -f ready ]] || exit 1
+            group=$(ps -o pgid= -p "$watcher")
+            after=$(ps -o tpgid= -p "$$")
+            printf 'shell=%s watcher=%s after=%s\n' "$before" "$group" "$after"
+            [[ $before != "$group" && $before == "$after" ]]
+        "#,
+    ]);
+    let mut child = pair.slave.spawn_command(command).unwrap();
+    drop(pair.slave);
+    let reader = BufReader::new(pair.master.try_clone_reader().unwrap());
+    let output = reader
+        .lines()
+        .map_while(Result::ok)
+        .find(|line| line.starts_with("shell="));
+    assert!(child.wait().unwrap().success(), "{output:?}");
+}

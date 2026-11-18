@@ -18,7 +18,7 @@ use nix::{
         termios::{self, SetArg, Termios},
         wait::{WaitPidFlag, WaitStatus, waitpid},
     },
-    unistd::{Pid, read, tcgetpgrp, tcsetpgrp},
+    unistd::{Pid, getpgrp, read, tcgetpgrp, tcsetpgrp},
 };
 use tokio::sync::watch;
 use tokio::{fs, io::AsyncWriteExt, process::Command, time};
@@ -329,23 +329,26 @@ fn spawn_foreground(mut cmd: Command) -> Result<ForegroundChild> {
     // subtree, but a background group gets SIGTTIN on terminal reads. The child
     // claims terminal foreground itself in pre_exec — after setpgid but before
     // exec — so by the time bash starts there is no race window.
-    let original_pgid = original_foreground_pgid();
-    let original_termios = save_termios();
+    let original_pgid = original_foreground_pgid().filter(|&pgid| pgid == getpgrp());
+    let original_termios = original_pgid.and_then(|_| save_termios());
 
-    // SAFETY: All syscalls (open, signal, tcsetpgrp, getpid, close) are
-    // async-signal-safe per POSIX and valid between fork and exec.
-    unsafe {
-        cmd.pre_exec(move || {
-            let tty_fd = libc::open(c"/dev/tty".as_ptr(), libc::O_RDWR);
-            if tty_fd < 0 {
-                return Ok(());
-            }
-            libc::signal(libc::SIGTTOU, libc::SIG_IGN);
-            libc::tcsetpgrp(tty_fd, libc::getpid());
-            libc::signal(libc::SIGTTOU, libc::SIG_DFL);
-            libc::close(tty_fd);
-            Ok(())
-        });
+    if let Some(original) = original_pgid {
+        // SAFETY: These syscalls are async-signal-safe between fork and exec.
+        unsafe {
+            cmd.pre_exec(move || {
+                let tty_fd = libc::open(c"/dev/tty".as_ptr(), libc::O_RDWR);
+                if tty_fd < 0 {
+                    return Ok(());
+                }
+                if libc::tcgetpgrp(tty_fd) == original.as_raw() {
+                    libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+                    libc::tcsetpgrp(tty_fd, libc::getpid());
+                    libc::signal(libc::SIGTTOU, libc::SIG_DFL);
+                }
+                libc::close(tty_fd);
+                Ok(())
+            });
+        }
     }
 
     cmd.process_group(0);
