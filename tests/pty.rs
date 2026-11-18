@@ -284,3 +284,25 @@ fn default_compiler_capture_allows_terminal_input() {
     let output = inf.wait_for_contains("target-ran", timeout).unwrap();
     assert!(!output.contains("captured"));
 }
+
+#[test]
+fn waitkey_uses_terminal_after_reading_piped_monitor_paths() {
+    let dir = TestDir::new();
+    dir.touch("source");
+    let mut command = portable_pty::CommandBuilder::new("bash");
+    command.cwd(dir.path());
+    command.env("INF_TEST_BIN", support::inf_bin());
+    command.args([
+        "-c",
+        r#"printf 'source\n' | "$INF_TEST_BIN" -w -r 'echo target-ran'"#,
+    ]);
+    let mut inf = PtyInf::spawn_command(command);
+    let timeout = Duration::from_secs(5);
+    inf.wait_for_contains("<press Enter to run>", timeout)
+        .unwrap();
+    inf.write("\n");
+    inf.wait_for_contains("[execution succeeded]", timeout)
+        .unwrap();
+    inf.write("\x03");
+    assert!(inf.wait_for_exit(timeout));
+}

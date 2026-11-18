@@ -1,7 +1,10 @@
 use std::{
     fs::{File, OpenOptions},
     io::{self, IsTerminal, Write},
-    os::unix::{fs::OpenOptionsExt, process::ExitStatusExt},
+    os::{
+        fd::{AsFd, AsRawFd},
+        unix::{fs::OpenOptionsExt, process::ExitStatusExt},
+    },
     path::Path,
     process::ExitStatus,
     process::Stdio,
@@ -625,20 +628,28 @@ async fn wait_for_cancel(cancel: &mut watch::Receiver<u64>, version: u64) {
 }
 
 async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
+    let stdin = io::stdin();
+    let terminal = if stdin.is_terminal() {
+        None
+    } else {
+        Some(File::open("/dev/tty").context("--waitkey requires a terminal")?)
+    };
+    let input = terminal.as_ref().map_or_else(|| stdin.as_fd(), File::as_fd);
+
     print!("<press Enter to run>");
     io::stdout().flush()?;
     let version = *cancel.borrow();
-    let mut stdin = libc::pollfd {
-        fd: libc::STDIN_FILENO,
+    let mut poll_fd = libc::pollfd {
+        fd: input.as_raw_fd(),
         events: libc::POLLIN,
         revents: 0,
     };
     loop {
-        // SAFETY: stdin is a valid pollfd and the zero timeout never blocks.
-        let ready = unsafe { libc::poll(&mut stdin, 1, 0) };
+        // SAFETY: poll_fd describes the open input descriptor and the timeout is zero.
+        let ready = unsafe { libc::poll(&mut poll_fd, 1, 0) };
         if ready > 0 {
             let mut buf = [0_u8; 1];
-            if read(io::stdin(), &mut buf)? == 0 {
+            if read(input, &mut buf)? == 0 {
                 return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
             }
             if buf[0] == b'\n' {

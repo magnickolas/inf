@@ -192,6 +192,13 @@ pub struct PtyInf {
 
 impl PtyInf {
     pub fn spawn(cwd: &Path, args: &[&str]) -> Self {
+        let mut command = CommandBuilder::new(inf_bin().as_os_str());
+        command.args(args);
+        command.cwd(cwd.as_os_str());
+        Self::spawn_command(command)
+    }
+
+    pub fn spawn_command(command: CommandBuilder) -> Self {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -201,11 +208,6 @@ impl PtyInf {
                 pixel_height: 0,
             })
             .expect("open pty");
-
-        let bin = inf_bin();
-        let mut command = CommandBuilder::new(bin.as_os_str());
-        command.args(args);
-        command.cwd(cwd.as_os_str());
 
         let child = pair.slave.spawn_command(command).expect("spawn inf in pty");
         drop(pair.slave);
