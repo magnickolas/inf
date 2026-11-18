@@ -129,7 +129,6 @@ impl Config {
                     .unwrap_or_else(|_| PathBuf::from("."))
                     .join(file)
             };
-            let path = normalize_watch_path(path);
             if seen.insert(path.clone()) {
                 paths.push(path);
             }
@@ -141,9 +140,7 @@ impl Config {
         for file in value.split(',') {
             let expanded = expand_tilde(file);
             let path = PathBuf::from(&expanded);
-            if path.exists() {
-                self.monitor_files.push(normalize_watch_path(path));
-            } else if path.is_absolute() {
+            if path.is_absolute() {
                 self.monitor_files.push(path);
             } else {
                 self.monitor_files.push(
@@ -169,24 +166,6 @@ impl Config {
                 self.monitor_files.push(PathBuf::from(arg));
             }
         }
-    }
-}
-
-fn normalize_watch_path(path: PathBuf) -> PathBuf {
-    // Resolve parent components without losing a replaceable symlink filename.
-    match (path.parent(), path.file_name()) {
-        (Some(parent), Some(name)) => {
-            let parent = if parent.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                parent
-            };
-            parent
-                .canonicalize()
-                .map(|parent| parent.join(name))
-                .unwrap_or(path)
-        }
-        _ => path,
     }
 }
 

@@ -19,7 +19,7 @@ use crate::{
 };
 
 enum Event {
-    Trigger,
+    Trigger(Vec<WatchedPath>),
     Quit,
 }
 
@@ -28,9 +28,9 @@ pub(crate) async fn run(config: Config, colors: Colors) -> Result<()> {
     let config = Arc::new(config);
     let colors = Arc::new(colors);
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let wx = make_watchexec(tx.clone(), watch_paths.clone())?;
-    let mut fs_ready = wx.config.fs_ready();
     let mut watched_dirs = parent_dirs(&watch_paths);
+    let wx = make_watchexec(tx, watch_paths, watched_dirs.clone())?;
+    let mut fs_ready = wx.config.fs_ready();
     wx.config.pathset(watched_dirs.clone());
     let mut main = wx.main();
     let _ = fs_ready.changed().await;
@@ -47,9 +47,7 @@ pub(crate) async fn run(config: Config, colors: Colors) -> Result<()> {
         tokio::select! {
             event = rx.recv() => {
                 match event {
-                    Some(Event::Trigger) => {
-                        // A replaced symlink may point into a different directory.
-                        let dirs = parent_dirs(&watch_paths);
+                    Some(Event::Trigger(dirs)) => {
                         if dirs != watched_dirs {
                             wx.config.pathset(dirs.clone());
                             let _ = fs_ready.changed().await;
@@ -105,53 +103,84 @@ pub(crate) async fn run(config: Config, colors: Colors) -> Result<()> {
 }
 
 fn parent_dirs(paths: &[PathBuf]) -> Vec<WatchedPath> {
-    let mut seen = HashSet::new();
+    let mut seen_dirs = HashSet::new();
     let mut dirs = Vec::new();
     for path in paths {
-        // Keep watching a symlink target's directory while the target is absent.
-        let target = path.canonicalize().ok().or_else(|| {
-            path.read_link()
-                .ok()
-                .map(|target| path.parent().unwrap_or(path).join(target))
-        });
-        for path in std::iter::once(path.clone()).chain(target) {
-            let dir = path.parent().unwrap_or(&path);
-            if seen.insert(dir.to_path_buf()) {
-                dirs.push(WatchedPath::non_recursive(dir));
-            }
-        }
+        collect_watch_dirs(path, &mut HashSet::new(), &mut seen_dirs, &mut dirs);
     }
     dirs
+}
+
+fn collect_watch_dirs(
+    path: &Path,
+    seen_links: &mut HashSet<PathBuf>,
+    seen_dirs: &mut HashSet<PathBuf>,
+    dirs: &mut Vec<WatchedPath>,
+) {
+    if let Some(dir) = path
+        .ancestors()
+        .skip(1)
+        .find_map(|parent| parent.canonicalize().ok())
+        && seen_dirs.insert(dir.clone())
+    {
+        dirs.push(WatchedPath::non_recursive(dir));
+    }
+
+    // Watch the directory containing each symlink so replacements are visible,
+    // and follow its target even while the final file is absent.
+    let ancestors: Vec<_> = path.ancestors().collect();
+    for component in ancestors.into_iter().rev() {
+        if let Some(parent) = component.parent()
+            && let Some(name) = component.file_name()
+            && let Ok(target) = component.read_link()
+            && let Ok(parent) = parent.canonicalize()
+            && let Ok(suffix) = path.strip_prefix(component)
+        {
+            if !seen_links.insert(parent.join(name)) {
+                break;
+            }
+            let mut target = parent.join(target);
+            if !suffix.as_os_str().is_empty() {
+                target.push(suffix);
+            }
+            if seen_dirs.insert(parent.clone()) {
+                dirs.push(WatchedPath::non_recursive(parent));
+            }
+            collect_watch_dirs(&target, seen_links, seen_dirs, dirs);
+            break;
+        }
+    }
 }
 
 fn make_watchexec(
     tx: mpsc::UnboundedSender<Event>,
     watch_paths: Vec<PathBuf>,
+    watched_dirs: Vec<WatchedPath>,
 ) -> Result<Arc<Watchexec>> {
-    let snapshots = Arc::new(Mutex::new(
-        watch_paths
-            .iter()
-            .map(|path| (path.clone(), file_stat(path)))
-            .collect::<HashMap<_, _>>(),
-    ));
+    let snapshots = watch_paths
+        .iter()
+        .map(|path| (path.clone(), file_stat(path)))
+        .collect::<HashMap<_, _>>();
+    let state = Mutex::new((snapshots, watched_dirs));
     let wx = Watchexec::new(move |mut action| {
-        let path_changed = {
-            let mut snapshots = snapshots.lock().expect("watch snapshots lock poisoned");
-            // Refresh every snapshot, including symlink targets that disappeared.
-            action.paths().next().is_some()
-                && watch_paths.iter().fold(false, |changed, path| {
-                    watched_path_changed(path, &mut snapshots) | changed
-                })
-        };
-
         if action.signals().next().is_some() {
             let _ = tx.send(Event::Quit);
             action.quit();
             return action;
         }
 
-        if path_changed {
-            let _ = tx.send(Event::Trigger);
+        if action.paths().next().is_some() {
+            let mut state = state.lock().expect("watch state lock poisoned");
+            let (snapshots, watched_dirs) = &mut *state;
+            // Refresh every snapshot, including symlink targets that disappeared.
+            let path_changed = watch_paths.iter().fold(false, |changed, path| {
+                watched_path_changed(path, snapshots) | changed
+            });
+            let dirs = parent_dirs(&watch_paths);
+            if path_changed || dirs != *watched_dirs {
+                *watched_dirs = dirs.clone();
+                let _ = tx.send(Event::Trigger(dirs));
+            }
         }
 
         action

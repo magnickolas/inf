@@ -365,6 +365,33 @@ fn replaced_symlink_tracks_new_target_in_another_directory() {
 }
 
 #[test]
+fn replaced_directory_symlink_tracks_files_in_the_new_target() {
+    use std::os::unix::fs::symlink;
+
+    let dir = TestDir::new();
+    std::fs::create_dir(dir.path().join("old")).unwrap();
+    std::fs::create_dir(dir.path().join("new")).unwrap();
+    dir.write("old/source.txt", "old\n");
+    dir.write("new/source.txt", "new\n");
+    symlink("old", dir.path().join("current")).unwrap();
+    let mut inf = RunningInf::spawn(
+        dir.path(),
+        &["-m", "current/source.txt", "-r", "cat current/source.txt"],
+    );
+    let timeout = Duration::from_secs(5);
+    inf.wait_for_line_count_at_least("old", 1, timeout).unwrap();
+
+    symlink("new", dir.path().join("replacement")).unwrap();
+    std::fs::rename(dir.path().join("replacement"), dir.path().join("current")).unwrap();
+    inf.wait_for_line_count_at_least("new", 1, timeout)
+        .expect("directory symlink replacement triggers a run");
+    dir.write("new/source.txt", "new edited\n");
+    inf.wait_for_line_count_at_least("new edited", 1, timeout)
+        .expect("new target is watched");
+    inf.stop();
+}
+
+#[test]
 fn multiple_monitor_flags_gather_all_files() {
     let dir = TestDir::new();
     dir.init_default_files();
