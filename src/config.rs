@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     env,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     io::{self, IsTerminal, Read, Write},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
@@ -13,7 +13,7 @@ use crate::{cli::Cli, output::Colors};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Config {
-    pub(crate) compile_cmd: Vec<String>,
+    pub(crate) compile_cmd: Vec<OsString>,
     pub(crate) run_cmd: Option<String>,
     pub(crate) input_file: Option<PathBuf>,
     pub(crate) monitor_files: Vec<PathBuf>,
@@ -70,17 +70,8 @@ impl Config {
 
         let mut input = Vec::new();
         io::stdin().read_to_end(&mut input)?;
-        if let Ok(text) = std::str::from_utf8(&input) {
-            for token in text.split_whitespace() {
-                self.add_monitor_files(OsStr::new(token));
-            }
-        } else {
-            for token in input
-                .split(u8::is_ascii_whitespace)
-                .filter(|token| !token.is_empty())
-            {
-                self.add_monitor_files(OsStr::from_bytes(token));
-            }
+        for token in split_words(OsStr::from_bytes(&input)) {
+            self.add_monitor_files(token);
         }
         Ok(())
     }
@@ -171,24 +162,37 @@ impl Config {
     fn add_compile_files(&mut self) {
         // A shell script still uses the existing whitespace heuristic.
         // Separate arguments already have their original boundaries.
-        let args: Vec<&str> = match self.compile_cmd.as_slice() {
-            [script] => script.split_whitespace().collect(),
-            args => args.iter().map(String::as_str).collect(),
+        let args: Vec<&OsStr> = match self.compile_cmd.as_slice() {
+            [script] => split_words(script),
+            args => args.iter().map(OsString::as_os_str).collect(),
         };
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             if matches!(
-                arg,
-                "-o" | "-MF" | "-MJ" | "-serialize-diagnostics" | "--serialize-diagnostics"
+                arg.as_bytes(),
+                b"-o" | b"-MF" | b"-MJ" | b"-serialize-diagnostics" | b"--serialize-diagnostics"
             ) {
                 // A compiler output can already exist and change on every run.
                 args.next();
                 continue;
             }
-            if arg.contains('.') && Path::new(arg).is_file() {
+            if arg.as_bytes().contains(&b'.') && Path::new(arg).is_file() {
                 self.monitor_files.push(PathBuf::from(arg));
             }
         }
+    }
+}
+
+fn split_words(value: &OsStr) -> Vec<&OsStr> {
+    if let Some(text) = value.to_str() {
+        text.split_whitespace().map(OsStr::new).collect()
+    } else {
+        value
+            .as_bytes()
+            .split(u8::is_ascii_whitespace)
+            .filter(|token| !token.is_empty())
+            .map(OsStr::from_bytes)
+            .collect()
     }
 }
 
@@ -266,12 +270,12 @@ mod tests {
             compile_cmd: vec![
                 "clang".into(),
                 "-MJ".into(),
-                database.to_string_lossy().into(),
+                database.as_os_str().into(),
                 "--serialize-diagnostics".into(),
-                diagnostics.to_string_lossy().into(),
+                diagnostics.as_os_str().into(),
                 "-serialize-diagnostics".into(),
-                diagnostics_alias.to_string_lossy().into(),
-                source.to_string_lossy().into(),
+                diagnostics_alias.as_os_str().into(),
+                source.as_os_str().into(),
             ],
         };
 

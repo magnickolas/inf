@@ -60,7 +60,10 @@ pub(crate) async fn compile_and_run(
         banner.push_str(&format!(
             "{}[compilation: {}]{}\n",
             colors.blue,
-            config.compile_cmd.join(" "),
+            config
+                .compile_cmd
+                .join(std::ffi::OsStr::new(" "))
+                .to_string_lossy(),
             colors.reset
         ));
     }

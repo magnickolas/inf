@@ -84,7 +84,7 @@ pub(crate) struct Cli {
     pub(crate) debug: bool,
 
     #[arg(value_name = "COMPILE_CMD", hide = true)]
-    pub(crate) compile_cmd: Vec<String>,
+    pub(crate) compile_cmd: Vec<OsString>,
 }
 
 pub(crate) enum ParseOutcome {

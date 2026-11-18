@@ -284,3 +284,29 @@ fn escaped_comma_in_piped_monitor_list_preserves_filename() {
         .success()
         .stdout(predicate::str::contains("a,b.txt"));
 }
+
+#[test]
+fn compile_command_receives_non_utf8_argument_bytes() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt, time::Duration};
+
+    let dir = TestDir::new();
+    dir.touch("source");
+    let bytes = b"\xff";
+    inf_in(&dir)
+        .args([
+            "-v",
+            "-z",
+            "-m",
+            "source",
+            "-r",
+            "kill -TERM \"$PPID\"",
+            "--",
+            "printf",
+            "%s",
+        ])
+        .arg(OsStr::from_bytes(bytes))
+        .timeout(Duration::from_secs(5))
+        .assert()
+        .success()
+        .stdout(bytes.as_slice());
+}

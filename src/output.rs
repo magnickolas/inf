@@ -43,8 +43,14 @@ pub(crate) fn debug_print(config: &Config, colors: &Colors) -> std::io::Result<(
     let mut stdout = io::stdout().lock();
     writeln!(stdout, "{}Parsed arguments:{}", colors.green, colors.reset)?;
     if !config.compile_cmd.is_empty() {
-        let value = config.compile_cmd.join(" ");
-        writeln!(stdout, "{}compileCmd{}={value}", colors.cyan, colors.reset)?;
+        let value = config.compile_cmd.join(std::ffi::OsStr::new(" "));
+        writeln!(
+            stdout,
+            "{}compileCmd{}={}",
+            colors.cyan,
+            colors.reset,
+            value.to_string_lossy()
+        )?;
     }
     if let Some(value) = &config.run_cmd {
         let rendered = if let Some(input) = &config.input_file {
