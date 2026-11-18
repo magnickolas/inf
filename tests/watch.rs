@@ -596,6 +596,18 @@ fn background_descendant_does_not_survive_shell_completion() {
 }
 
 #[test]
+fn run_terminated_by_signal_prints_signal() {
+    let dir = TestDir::new();
+    dir.touch("source");
+    let output = run_until(
+        dir.path(),
+        &["-z", "-m", "source", "-r", "kill -TERM $$"],
+        "[terminated by SIGTERM]",
+    );
+    assert_eq!(output, "[terminated by SIGTERM]\n");
+}
+
+#[test]
 fn run_failure_prints_exit_code() {
     let dir = TestDir::new();
     dir.init_default_files();

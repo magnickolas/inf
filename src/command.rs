@@ -142,13 +142,12 @@ async fn run_target(
     };
     let result = run_shell(command, input, OutputMode::Inherit, cancel).await?;
     if let CommandResult::Finished(status) = &result {
-        if !status.success() {
-            println!(
-                "{}[exit code = {}]{}",
-                colors.red,
-                status.code().unwrap_or(1),
-                colors.reset
-            );
+        if let Some(number) = status.signal() {
+            let signal = Signal::try_from(number)
+                .map_or_else(|_| format!("signal {number}"), |signal| signal.to_string());
+            println!("{}[terminated by {signal}]{}", colors.red, colors.reset);
+        } else if let Some(code) = status.code().filter(|&code| code != 0) {
+            println!("{}[exit code = {code}]{}", colors.red, colors.reset);
         } else if !config.zen {
             println!("{}[execution succeeded]{}", colors.green, colors.reset);
         }
