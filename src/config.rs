@@ -216,7 +216,11 @@ fn expand_tilde(path: &[u8]) -> PathBuf {
     if let Some(rest) = path.strip_prefix(b"~/")
         && let Some(home) = env::var_os("HOME")
     {
-        return PathBuf::from(home).join(OsStr::from_bytes(rest));
+        let start = rest
+            .iter()
+            .position(|&byte| byte != b'/')
+            .unwrap_or(rest.len());
+        return PathBuf::from(home).join(OsStr::from_bytes(&rest[start..]));
     }
     PathBuf::from(OsStr::from_bytes(path))
 }

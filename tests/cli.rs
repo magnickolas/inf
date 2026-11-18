@@ -343,3 +343,17 @@ fn run_script_preserves_non_utf8_bytes() {
         .success()
         .stdout(b"\xff".as_slice());
 }
+
+#[test]
+fn repeated_slashes_after_tilde_keep_path_under_home() {
+    let dir = TestDir::new();
+    let home = dir.path().join("home");
+    std::fs::create_dir(&home).unwrap();
+    dir.touch("home/source.txt");
+    inf_in(&dir)
+        .env("HOME", home)
+        .args(["-d", "-m", "~///source.txt"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("/home/source.txt"));
+}
