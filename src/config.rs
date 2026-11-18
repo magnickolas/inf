@@ -1,7 +1,9 @@
 use std::{
     collections::HashSet,
     env,
+    ffi::OsStr,
     io::{self, IsTerminal, Read},
+    os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
 };
 
@@ -13,7 +15,7 @@ use crate::{cli::Cli, output::Colors};
 pub(crate) struct Config {
     pub(crate) compile_cmd: Option<String>,
     pub(crate) run_cmd: Option<String>,
-    pub(crate) input_file: Option<String>,
+    pub(crate) input_file: Option<PathBuf>,
     pub(crate) monitor_files: Vec<PathBuf>,
     pub(crate) noparse: bool,
     pub(crate) refresh: bool,
@@ -61,7 +63,7 @@ impl Config {
         if let Some(input_file) = &config.input_file
             && config.run_cmd.is_some()
         {
-            config.monitor_files.push(PathBuf::from(input_file));
+            config.monitor_files.push(input_file.clone());
         }
 
         if !config.noparse && config.compile_cmd.is_some() {
@@ -79,7 +81,7 @@ impl Config {
         let mut input = String::new();
         io::stdin().read_to_string(&mut input)?;
         for token in input.split_whitespace() {
-            self.add_monitor_files(token);
+            self.add_monitor_files(OsStr::new(token));
         }
         Ok(())
     }
@@ -136,10 +138,9 @@ impl Config {
         paths
     }
 
-    fn add_monitor_files(&mut self, value: &str) {
-        for file in value.split(',') {
-            let expanded = expand_tilde(file);
-            let path = PathBuf::from(&expanded);
+    fn add_monitor_files(&mut self, value: &OsStr) {
+        for file in value.as_bytes().split(|&byte| byte == b',') {
+            let path = expand_tilde(file);
             if path.is_absolute() {
                 self.monitor_files.push(path);
             } else {
@@ -173,16 +174,13 @@ fn looks_like_file_arg(arg: &str) -> bool {
     !arg.chars().any(char::is_whitespace) && arg.contains('.') && !arg.starts_with('.')
 }
 
-fn expand_tilde(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/")
+fn expand_tilde(path: &[u8]) -> PathBuf {
+    if let Some(rest) = path.strip_prefix(b"~/")
         && let Some(home) = env::var_os("HOME")
     {
-        return PathBuf::from(home)
-            .join(rest)
-            .to_string_lossy()
-            .into_owned();
+        return PathBuf::from(home).join(OsStr::from_bytes(rest));
     }
-    path.to_string()
+    PathBuf::from(OsStr::from_bytes(path))
 }
 
 fn error(colors: &Colors, message: &str) -> u8 {
@@ -199,7 +197,7 @@ mod tests {
         let cli = Cli {
             run_cmd: None,
             input_file: None,
-            monitor: vec!["a.txt,b.txt".to_string()],
+            monitor: vec!["a.txt,b.txt".into()],
             noparse: false,
             refresh: false,
             postpone: false,

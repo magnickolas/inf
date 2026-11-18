@@ -2,6 +2,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{self, Write},
     os::unix::{fs::OpenOptionsExt, process::ExitStatusExt},
+    path::Path,
     process::ExitStatus,
     process::Stdio,
     sync::Arc,
@@ -155,7 +156,7 @@ async fn run_target(
     })
 }
 
-fn open_run_input(path: &str) -> io::Result<File> {
+fn open_run_input(path: &Path) -> io::Result<File> {
     // Validate the opened file so a replacement between validation and open
     // cannot leave us blocked waiting for a FIFO writer.
     let file = OpenOptions::new()

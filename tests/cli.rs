@@ -215,3 +215,18 @@ fn smoke_binary_can_be_spawned_without_assert_cmd() {
         .expect("spawn inf");
     assert!(status.success());
 }
+
+#[test]
+fn non_utf8_monitor_path_reaches_file_validation() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
+    let dir = TestDir::new();
+    inf_in(&dir)
+        .arg("-m")
+        .arg(OsStr::from_bytes(b"source-\xff"))
+        .arg("-r")
+        .arg("true")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("ERROR: missing file"));
+}

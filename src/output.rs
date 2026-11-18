@@ -44,14 +44,19 @@ pub(crate) fn debug_print(config: &Config, colors: &Colors) {
     }
     if let Some(value) = &config.run_cmd {
         let rendered = if let Some(input) = &config.input_file {
-            format!("{value} <{input}")
+            format!("{value} <{}", input.display())
         } else {
             value.clone()
         };
         println!("{}runCmd{}={rendered}", colors.cyan, colors.reset);
     }
     if let Some(value) = &config.input_file {
-        println!("{}inputfile{}={value}", colors.cyan, colors.reset);
+        println!(
+            "{}inputfile{}={}",
+            colors.cyan,
+            colors.reset,
+            value.display()
+        );
     }
 
     for (name, value) in [

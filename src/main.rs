@@ -24,7 +24,7 @@ async fn main() -> ExitCode {
 
 async fn run() -> Result<u8> {
     let colors = output::Colors::detect();
-    let cli = match cli::parse(std::env::args().collect())? {
+    let cli = match cli::parse()? {
         cli::ParseOutcome::Exit { code } => return Ok(code),
         cli::ParseOutcome::Run(cli) => cli,
     };

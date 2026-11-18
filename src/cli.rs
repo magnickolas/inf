@@ -1,3 +1,5 @@
+use std::{ffi::OsString, path::PathBuf};
+
 use clap::Parser;
 
 #[derive(Debug, Parser)]
@@ -23,7 +25,7 @@ pub(crate) struct Cli {
         value_name = "INPUT_FILE",
         help = "Input file"
     )]
-    pub(crate) input_file: Option<String>,
+    pub(crate) input_file: Option<PathBuf>,
 
     #[arg(
         short = 'm',
@@ -31,7 +33,7 @@ pub(crate) struct Cli {
         value_name = "FILE[,FILE...]",
         help = "Comma separated list of files to trigger recompilation"
     )]
-    pub(crate) monitor: Vec<String>,
+    pub(crate) monitor: Vec<OsString>,
 
     #[arg(
         short = 'n',
@@ -86,8 +88,8 @@ pub(crate) enum ParseOutcome {
     Exit { code: u8 },
 }
 
-pub(crate) fn parse(args: Vec<String>) -> anyhow::Result<ParseOutcome> {
-    match Cli::try_parse_from(args) {
+pub(crate) fn parse() -> anyhow::Result<ParseOutcome> {
+    match Cli::try_parse() {
         Ok(cli) => Ok(ParseOutcome::Run(cli)),
         Err(err) => {
             let code = err.exit_code() as u8;
