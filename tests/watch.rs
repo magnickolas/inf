@@ -339,6 +339,25 @@ fn same_size_edit_with_preserved_mtime_triggers_run() {
 }
 
 #[test]
+fn autodetection_does_not_watch_compiler_output() {
+    let dir = TestDir::new();
+    dir.write("main.c", "int main(void) { return 0; }\n");
+    dir.touch("app.bin");
+    let mut inf = RunningInf::spawn(dir.path(), &["cc", "-o", "app.bin", "main.c"]);
+    let timeout = Duration::from_secs(5);
+    let success = "Compilation succeeded!";
+    inf.wait_for_line_count_at_least(success, 1, timeout)
+        .unwrap();
+    assert_line_count_stays(&inf, success, 1, Duration::from_millis(800));
+
+    dir.append("main.c", "/* trigger a rebuild */\n");
+    inf.wait_for_line_count_at_least(success, 2, timeout)
+        .unwrap();
+    assert_line_count_stays(&inf, success, 2, Duration::from_millis(800));
+    inf.stop();
+}
+
+#[test]
 fn autodetects_compile_files_with_dot_relative_paths() {
     let dir = TestDir::new();
     dir.write("main.c", "original\n");

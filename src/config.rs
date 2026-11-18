@@ -171,7 +171,13 @@ impl Config {
         // deliberately conservative: obvious `name.ext` tokens become watched
         // files, while shell constructs, quoted paths with spaces, response
         // files, generated source lists, etc. must be supplied with `--monitor`.
-        for arg in compile_cmd.split_whitespace() {
+        let mut args = compile_cmd.split_whitespace();
+        while let Some(arg) = args.next() {
+            if arg == "-o" {
+                // A compiler output can already exist and change on every run.
+                args.next();
+                continue;
+            }
             if arg.contains('.') && Path::new(arg).is_file() {
                 self.monitor_files.push(PathBuf::from(arg));
             }
