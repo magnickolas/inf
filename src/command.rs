@@ -100,7 +100,7 @@ async fn run_compile(config: &Config, cancel: &mut watch::Receiver<u64>) -> Resu
     }
 
     let mode = if config.quiet {
-        OutputMode::CaptureBoth
+        OutputMode::Suppress
     } else {
         OutputMode::CaptureStdout
     };
@@ -152,7 +152,7 @@ async fn run_target(
 enum OutputMode {
     Inherit,
     CaptureStdout,
-    CaptureBoth,
+    Suppress,
 }
 
 async fn run_shell(
@@ -166,7 +166,7 @@ async fn run_shell(
             let cmd = shell_command(command, input, mode);
             run_in_foreground(cmd, cancel).await
         }
-        OutputMode::CaptureStdout | OutputMode::CaptureBoth => {
+        OutputMode::CaptureStdout | OutputMode::Suppress => {
             let cmd = shell_command(command, input, mode);
             run_captured(cmd, mode, cancel).await
         }
@@ -184,7 +184,7 @@ fn shell_command(command: &str, input: Option<File>, mode: OutputMode) -> Comman
         OutputMode::CaptureStdout => {
             cmd.stdout(Stdio::piped()).stderr(Stdio::inherit());
         }
-        OutputMode::CaptureBoth => {
+        OutputMode::Suppress => {
             cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         }
     }
@@ -220,23 +220,26 @@ async fn run_captured(
     let mut stdout_task = tokio::spawn(async move {
         let mut output = Vec::new();
         if let Some(out) = stdout.as_mut() {
-            out.read_to_end(&mut output).await?;
+            if matches!(mode, OutputMode::Suppress) {
+                tokio::io::copy(out, &mut tokio::io::sink()).await?;
+            } else {
+                out.read_to_end(&mut output).await?;
+            }
         }
         Ok::<_, io::Error>(output)
     });
     let mut stderr_task = tokio::spawn(async move {
-        let mut output = Vec::new();
         if let Some(err) = stderr.as_mut() {
-            err.read_to_end(&mut output).await?;
+            tokio::io::copy(err, &mut tokio::io::sink()).await?;
         }
-        Ok::<_, io::Error>(output)
+        Ok::<_, io::Error>(())
     });
 
     tokio::select! {
         result = async {
             let status = group.wait().await?;
             let stdout = (&mut stdout_task).await??;
-            let _stderr = (&mut stderr_task).await??;
+            (&mut stderr_task).await??;
             if !status.success() && matches!(mode, OutputMode::CaptureStdout) {
                 io::stdout().write_all(&stdout)?;
                 io::stdout().flush()?;
