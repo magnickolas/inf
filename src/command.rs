@@ -53,17 +53,18 @@ pub(crate) async fn compile_and_run(
     }
 
     if config.clear_screen {
-        print!("\x1b[2J\x1b[H");
+        write!(io::stdout(), "\x1b[2J\x1b[H")?;
         io::stdout().flush()?;
     }
 
     if !config.compile_cmd.is_empty() && !config.zen {
-        println!(
+        writeln!(
+            io::stdout(),
             "{}[compilation: {}]{}",
             colors.blue,
             config.compile_cmd.join(" "),
             colors.reset
-        );
+        )?;
     }
 
     if config.run_cmd.is_some() {
@@ -84,7 +85,12 @@ pub(crate) async fn compile_and_run(
             CommandResult::Cancelled => Ok(RunResult::Cancelled),
             CommandResult::Finished(status) => {
                 if status.success() && !config.zen {
-                    println!("{}Compilation succeeded!{}", colors.green, colors.reset);
+                    writeln!(
+                        io::stdout(),
+                        "{}Compilation succeeded!{}",
+                        colors.green,
+                        colors.reset
+                    )?;
                 }
                 Ok(RunResult::Completed)
             }
@@ -123,7 +129,7 @@ async fn run_target(
 ) -> Result<RunResult> {
     let command = config.run_cmd.as_deref().unwrap_or("");
     if !config.zen {
-        println!("{}{}{}", colors.green, command, colors.reset);
+        writeln!(io::stdout(), "{}{}{}", colors.green, command, colors.reset)?;
     }
 
     let input = if let Some(path) = &config.input_file {
@@ -142,11 +148,26 @@ async fn run_target(
         if let Some(number) = status.signal() {
             let signal = Signal::try_from(number)
                 .map_or_else(|_| format!("signal {number}"), |signal| signal.to_string());
-            println!("{}[terminated by {signal}]{}", colors.red, colors.reset);
+            writeln!(
+                io::stdout(),
+                "{}[terminated by {signal}]{}",
+                colors.red,
+                colors.reset
+            )?;
         } else if let Some(code) = status.code().filter(|&code| code != 0) {
-            println!("{}[exit code = {code}]{}", colors.red, colors.reset);
+            writeln!(
+                io::stdout(),
+                "{}[exit code = {code}]{}",
+                colors.red,
+                colors.reset
+            )?;
         } else if !config.zen {
-            println!("{}[execution succeeded]{}", colors.green, colors.reset);
+            writeln!(
+                io::stdout(),
+                "{}[execution succeeded]{}",
+                colors.green,
+                colors.reset
+            )?;
         }
     }
     Ok(match result {
@@ -630,7 +651,7 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
     };
     let input = terminal.as_ref().map_or_else(|| stdin.as_fd(), File::as_fd);
 
-    print!("<press Enter to run>");
+    write!(io::stdout(), "<press Enter to run>")?;
     io::stdout().flush()?;
     let version = *cancel.borrow();
     let mut poll_fd = libc::pollfd {
@@ -647,7 +668,7 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
                 return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
             }
             if buf[0] == b'\n' {
-                println!();
+                writeln!(io::stdout())?;
                 return Ok(true);
             }
             continue;

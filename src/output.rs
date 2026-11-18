@@ -33,15 +33,18 @@ impl Colors {
     }
 }
 
-pub(crate) fn debug_print(config: &Config, colors: &Colors) {
+pub(crate) fn debug_print(config: &Config, colors: &Colors) -> std::io::Result<()> {
+    use std::io::{self, Write};
+
     if !config.debug {
-        return;
+        return Ok(());
     }
 
-    println!("{}Parsed arguments:{}", colors.green, colors.reset);
+    let mut stdout = io::stdout().lock();
+    writeln!(stdout, "{}Parsed arguments:{}", colors.green, colors.reset)?;
     if !config.compile_cmd.is_empty() {
         let value = config.compile_cmd.join(" ");
-        println!("{}compileCmd{}={value}", colors.cyan, colors.reset);
+        writeln!(stdout, "{}compileCmd{}={value}", colors.cyan, colors.reset)?;
     }
     if let Some(value) = &config.run_cmd {
         let rendered = if let Some(input) = &config.input_file {
@@ -49,15 +52,16 @@ pub(crate) fn debug_print(config: &Config, colors: &Colors) {
         } else {
             value.clone()
         };
-        println!("{}runCmd{}={rendered}", colors.cyan, colors.reset);
+        writeln!(stdout, "{}runCmd{}={rendered}", colors.cyan, colors.reset)?;
     }
     if let Some(value) = &config.input_file {
-        println!(
+        writeln!(
+            stdout,
             "{}inputfile{}={}",
             colors.cyan,
             colors.reset,
             value.display()
-        );
+        )?;
     }
 
     for (name, value) in [
@@ -73,13 +77,14 @@ pub(crate) fn debug_print(config: &Config, colors: &Colors) {
         ("zen", config.zen),
         ("debug", config.debug),
     ] {
-        println!(
+        writeln!(
+            stdout,
             "{}{}{}={}",
             colors.cyan,
             name,
             colors.reset,
             if value { 1 } else { 0 }
-        );
+        )?;
     }
 
     let files = config
@@ -88,5 +93,10 @@ pub(crate) fn debug_print(config: &Config, colors: &Colors) {
         .map(|path| path.to_string_lossy())
         .collect::<Vec<_>>()
         .join(" ");
-    println!("{}monitorFiles[*]{}={files}", colors.cyan, colors.reset);
+    writeln!(
+        stdout,
+        "{}monitorFiles[*]{}={files}",
+        colors.cyan, colors.reset
+    )?;
+    stdout.flush()
 }

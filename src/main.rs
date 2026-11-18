@@ -15,6 +15,13 @@ use anyhow::Result;
 async fn main() -> ExitCode {
     match run().await {
         Ok(code) => ExitCode::from(code),
+        Err(err)
+            if err
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|err| err.kind() == std::io::ErrorKind::BrokenPipe) =>
+        {
+            ExitCode::SUCCESS
+        }
         Err(err) => {
             eprintln!("ERROR: {err}");
             ExitCode::from(1)
@@ -31,7 +38,7 @@ async fn run() -> Result<u8> {
 
     let mut config = config::Config::from_cli(cli)?;
     config.add_stdin_monitor_files()?;
-    output::debug_print(&config, &colors);
+    output::debug_print(&config, &colors)?;
     if let Err(code) = config.validate(&colors) {
         return Ok(code);
     }

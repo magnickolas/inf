@@ -367,7 +367,7 @@ fn wait_until<T>(timeout: Duration, mut predicate: impl FnMut() -> Option<T>) ->
     }
 }
 
-fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> bool {
+pub fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> bool {
     wait_until(timeout, || child.try_wait().ok().flatten()).is_some()
 }
 

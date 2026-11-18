@@ -778,3 +778,28 @@ fn compiler_arguments_preserve_spaces_and_metacharacters() {
     );
     assert!(output.contains("\nsource contents\n"), "{output}");
 }
+
+#[test]
+fn closed_stdout_exits_without_panicking() {
+    use std::process::{Command, Stdio};
+
+    let dir = TestDir::new();
+    dir.touch("source");
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let mut child = Command::new(support::inf_bin())
+        .current_dir(dir.path())
+        .stdin(Stdio::null())
+        .stdout(writer)
+        .stderr(Stdio::piped())
+        .args(["-m", "source", "-r", "true"])
+        .spawn()
+        .unwrap();
+    let exited = support::wait_for_child_exit(&mut child, Duration::from_secs(5));
+    if !exited {
+        child.kill().unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(exited && output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
