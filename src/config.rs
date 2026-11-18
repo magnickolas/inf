@@ -163,15 +163,11 @@ impl Config {
         // files, while shell constructs, quoted paths with spaces, response
         // files, generated source lists, etc. must be supplied with `--monitor`.
         for arg in compile_cmd.split_whitespace() {
-            if looks_like_file_arg(arg) && Path::new(arg).is_file() {
+            if arg.contains('.') && Path::new(arg).is_file() {
                 self.monitor_files.push(PathBuf::from(arg));
             }
         }
     }
-}
-
-fn looks_like_file_arg(arg: &str) -> bool {
-    !arg.chars().any(char::is_whitespace) && arg.contains('.') && !arg.starts_with('.')
 }
 
 fn expand_tilde(path: &[u8]) -> PathBuf {

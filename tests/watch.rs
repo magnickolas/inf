@@ -339,6 +339,20 @@ fn same_size_edit_with_preserved_mtime_triggers_run() {
 }
 
 #[test]
+fn autodetects_compile_files_with_dot_relative_paths() {
+    let dir = TestDir::new();
+    dir.write("main.c", "original\n");
+    let mut inf = RunningInf::spawn(dir.path(), &["-v", "--", "cat ./main.c"]);
+    let timeout = Duration::from_secs(5);
+    inf.wait_for_line_count_at_least("original", 1, timeout)
+        .unwrap();
+    dir.write("main.c", "updated\n");
+    inf.wait_for_line_count_at_least("updated", 1, timeout)
+        .unwrap();
+    inf.stop();
+}
+
+#[test]
 fn autodetected_path_with_parent_component_triggers_run() {
     let dir = TestDir::new();
     dir.init_default_files();
