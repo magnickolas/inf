@@ -567,6 +567,26 @@ fn interrupt_cancels_capture_after_shell_exits() {
 
 #[test]
 fn background_descendant_does_not_survive_shell_completion() {
+    assert_background_descendant_exits(
+        &["-m", "input.txt", "-r", "sleep 30 & echo $! > sleeper.pid"],
+        "[execution succeeded]",
+    );
+}
+
+#[test]
+fn background_descendant_does_not_survive_captured_compile() {
+    assert_background_descendant_exits(
+        &[
+            "-m",
+            "input.txt",
+            "--",
+            "sleep 30 </dev/null >/dev/null 2>&1 & echo $! > sleeper.pid",
+        ],
+        "Compilation succeeded!",
+    );
+}
+
+fn assert_background_descendant_exits(args: &[&str], completed: &str) {
     use nix::{
         errno::Errno,
         sys::signal::{Signal, kill},
@@ -576,11 +596,8 @@ fn background_descendant_does_not_survive_shell_completion() {
 
     let dir = TestDir::new();
     dir.touch("input.txt");
-    let mut inf = RunningInf::spawn(
-        dir.path(),
-        &["-m", "input.txt", "-r", "sleep 30 & echo $! > sleeper.pid"],
-    );
-    inf.wait_for_line_count_at_least("[execution succeeded]", 1, Duration::from_secs(5))
+    let mut inf = RunningInf::spawn(dir.path(), args);
+    inf.wait_for_line_count_at_least(completed, 1, Duration::from_secs(5))
         .unwrap();
     let pid = Pid::from_raw(
         std::fs::read_to_string(dir.path().join("sleeper.pid"))

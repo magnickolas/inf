@@ -300,24 +300,30 @@ async fn run_captured(
         Ok::<_, io::Error>(())
     });
 
-    tokio::select! {
+    let (status, capture) = tokio::select! {
         result = async {
             let status = child.wait().await?;
             let capture = (&mut stdout_task).await??;
             (&mut stderr_task).await??;
-            child.restore_terminal();
-            if !status.success() && let Some(file) = capture {
-                replay_compiler_output(file).await?;
-            }
-            Ok(CommandResult::Finished(status))
-        } => result,
+            Ok::<_, anyhow::Error>((status, capture))
+        } => result?,
         _ = wait_for_cancel(cancel) => {
             child.kill().await;
             stdout_task.abort();
             stderr_task.abort();
-            Ok(CommandResult::Cancelled)
+            return Ok(CommandResult::Cancelled);
+        }
+    };
+    drop(child);
+    if !status.success()
+        && let Some(file) = capture
+    {
+        tokio::select! {
+            result = replay_compiler_output(file) => result?,
+            _ = wait_for_cancel(cancel) => return Ok(CommandResult::Cancelled),
         }
     }
+    Ok(CommandResult::Finished(status))
 }
 
 async fn replay_compiler_output(mut file: fs::File) -> io::Result<()> {
@@ -607,6 +613,15 @@ impl CapturedChild {
             Self::Background(child) => {
                 let _ = child.kill().await;
             }
+        }
+    }
+}
+
+impl Drop for CapturedChild {
+    fn drop(&mut self) {
+        if let Self::Background(child) = self {
+            // The shell can exit and close its pipes while its group lives on.
+            let _ = child.start_kill();
         }
     }
 }
