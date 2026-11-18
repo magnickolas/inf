@@ -843,3 +843,56 @@ fn closed_stdout_exits_without_panicking() {
     assert!(exited && output.status.success(), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
 }
+
+#[test]
+fn blocked_missing_input_diagnostic_does_not_prevent_shutdown() {
+    use std::{
+        os::fd::AsRawFd,
+        process::{Command, Stdio},
+        thread,
+    };
+
+    use nix::{
+        sys::signal::{Signal, kill},
+        unistd::Pid,
+    };
+
+    let dir = TestDir::new();
+    dir.touch("input");
+    let mut child = Command::new(support::inf_bin())
+        .current_dir(dir.path())
+        .args([
+            "-z",
+            "-x",
+            "-i",
+            "input",
+            "-r",
+            "head -c 1048576 /dev/zero >&2; sleep 30",
+        ])
+        .stdin(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stderr = libc::pollfd {
+        fd: child.stderr.as_ref().unwrap().as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: stderr describes one open pipe descriptor owned by child.stderr.
+    let ready = unsafe { libc::poll(&mut stderr, 1, 5000) };
+    assert_ne!(stderr.revents & libc::POLLIN, 0, "poll returned {ready}");
+    thread::sleep(Duration::from_millis(200));
+
+    std::fs::remove_file(dir.path().join("input")).unwrap();
+    thread::sleep(Duration::from_millis(1000));
+    kill(Pid::from_raw(child.id() as i32), Signal::SIGTERM).unwrap();
+    let exited = support::wait_for_child_exit(&mut child, Duration::from_secs(3));
+    if !exited {
+        child.kill().unwrap();
+    }
+    let status = child.wait().unwrap();
+    assert!(
+        exited && status.success(),
+        "shutdown was blocked by stderr: {status}"
+    );
+}

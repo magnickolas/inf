@@ -2,7 +2,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{self, IsTerminal},
     os::{
-        fd::{AsFd, AsRawFd},
+        fd::{AsFd, AsRawFd, RawFd},
         unix::{fs::OpenOptionsExt, process::ExitStatusExt},
     },
     path::Path,
@@ -64,7 +64,7 @@ pub(crate) async fn compile_and_run(
             colors.reset
         ));
     }
-    if !write_run_output(&banner, &mut cancel).await? {
+    if !write_run_output(libc::STDOUT_FILENO, &banner, &mut cancel).await? {
         return Ok(RunResult::Cancelled);
     }
 
@@ -88,6 +88,7 @@ pub(crate) async fn compile_and_run(
                 if status.success()
                     && !config.zen
                     && !write_run_output(
+                        libc::STDOUT_FILENO,
                         &format!("{}Compilation succeeded!{}\n", colors.green, colors.reset),
                         &mut cancel,
                     )
@@ -133,6 +134,7 @@ async fn run_target(
     let command = config.run_cmd.as_deref().unwrap_or("");
     if !config.zen
         && !write_run_output(
+            libc::STDOUT_FILENO,
             &format!("{}{}{}\n", colors.green, command, colors.reset),
             cancel,
         )
@@ -145,8 +147,17 @@ async fn run_target(
         match open_run_input(path) {
             Ok(file) => Some(file),
             Err(err) => {
-                eprintln!("ERROR: failed to open input file {path:?}: {err}");
-                return Ok(RunResult::Completed);
+                let written = write_run_output(
+                    libc::STDERR_FILENO,
+                    &format!("ERROR: failed to open input file {path:?}: {err}\n"),
+                    cancel,
+                )
+                .await?;
+                return Ok(if written {
+                    RunResult::Completed
+                } else {
+                    RunResult::Cancelled
+                });
             }
         }
     } else {
@@ -178,7 +189,7 @@ async fn run_target(
         None
     };
     if let Some(message) = message
-        && !write_run_output(&message, cancel).await?
+        && !write_run_output(libc::STDOUT_FILENO, &message, cancel).await?
     {
         return Ok(RunResult::Cancelled);
     }
@@ -271,7 +282,15 @@ async fn run_captured(
         match tempfile::tempfile().or_else(|_| tempfile::tempfile_in("/tmp")) {
             Ok(file) => Some(fs::File::from_std(file)),
             Err(err) => {
-                eprintln!("Failed to capture compiler output, streaming it instead: {err}");
+                if !write_run_output(
+                    libc::STDERR_FILENO,
+                    &format!("Failed to capture compiler output, streaming it instead: {err}\n"),
+                    cancel,
+                )
+                .await?
+                {
+                    return Ok(CommandResult::Cancelled);
+                }
                 cmd.stdout(Stdio::inherit());
                 None
             }
@@ -334,21 +353,25 @@ async fn replay_compiler_output(mut file: fs::File) -> io::Result<()> {
         if len == 0 {
             return Ok(());
         }
-        write_stdout(&buffer[..len]).await?;
+        write_output(libc::STDOUT_FILENO, &buffer[..len]).await?;
     }
 }
 
-async fn write_run_output(message: &str, cancel: &mut watch::Receiver<u64>) -> io::Result<bool> {
+async fn write_run_output(
+    fd: RawFd,
+    message: &str,
+    cancel: &mut watch::Receiver<u64>,
+) -> io::Result<bool> {
     tokio::select! {
         biased;
         _ = wait_for_cancel(cancel) => Ok(false),
-        result = write_stdout(message.as_bytes()) => result.map(|()| true),
+        result = write_output(fd, message.as_bytes()) => result.map(|()| true),
     }
 }
 
-async fn write_stdout(mut remaining: &[u8]) -> io::Result<()> {
+async fn write_output(fd: RawFd, mut remaining: &[u8]) -> io::Result<()> {
     while !remaining.is_empty() {
-        match try_write_stdout(remaining) {
+        match try_write_output(fd, remaining) {
             Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
             Ok(written) => remaining = &remaining[written..],
             Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
@@ -361,10 +384,9 @@ async fn write_stdout(mut remaining: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-fn try_write_stdout(bytes: &[u8]) -> io::Result<usize> {
-    let fd = libc::STDOUT_FILENO;
+fn try_write_output(fd: RawFd, bytes: &[u8]) -> io::Result<usize> {
     // SAFETY: The slice stays valid for the duration of the write. Restore
-    // stdout's flags before yielding because other processes may share them.
+    // the descriptor flags before yielding because other processes may share them.
     unsafe {
         let flags = libc::fcntl(fd, libc::F_GETFL);
         if flags == -1 {
@@ -477,8 +499,14 @@ impl ForegroundChild {
                 }
                 Ok(WaitStatus::Stopped(_, signal)) => {
                     self.restore_terminal();
-                    eprintln!("Command stopped by {signal}, ending this run");
-                    break self.kill().await?;
+                    let status = self.kill().await?;
+                    self.status = Some(status);
+                    write_output(
+                        libc::STDERR_FILENO,
+                        format!("Command stopped by {signal}, ending this run\n").as_bytes(),
+                    )
+                    .await?;
+                    break status;
                 }
                 Ok(_) | Err(Errno::EINTR) => {}
                 Err(err) => return Err(err).context("failed to wait for foreground command"),
@@ -682,7 +710,7 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
     };
     let input = terminal.as_ref().map_or_else(|| stdin.as_fd(), File::as_fd);
 
-    if !write_run_output("<press Enter to run>", cancel).await? {
+    if !write_run_output(libc::STDOUT_FILENO, "<press Enter to run>", cancel).await? {
         return Ok(false);
     }
     let mut poll_fd = libc::pollfd {
@@ -699,7 +727,7 @@ async fn wait_for_key(cancel: &mut watch::Receiver<u64>) -> Result<bool> {
                 return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
             }
             if buf[0] == b'\n' {
-                return Ok(write_run_output("\n", cancel).await?);
+                return Ok(write_run_output(libc::STDOUT_FILENO, "\n", cancel).await?);
             }
             continue;
         }
