@@ -230,3 +230,15 @@ fn non_utf8_monitor_path_reaches_file_validation() {
         .code(1)
         .stderr(predicate::str::contains("ERROR: missing file"));
 }
+
+#[test]
+fn non_utf8_piped_monitor_path_reaches_file_validation() {
+    let dir = TestDir::new();
+    inf_in(&dir)
+        .args(["-r", "true"])
+        .write_stdin(b"source-\xff\n".as_slice())
+        .timeout(std::time::Duration::from_secs(5))
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("ERROR: missing file"));
+}

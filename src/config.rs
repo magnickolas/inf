@@ -78,10 +78,19 @@ impl Config {
             return Ok(());
         }
 
-        let mut input = String::new();
-        io::stdin().read_to_string(&mut input)?;
-        for token in input.split_whitespace() {
-            self.add_monitor_files(OsStr::new(token));
+        let mut input = Vec::new();
+        io::stdin().read_to_end(&mut input)?;
+        if let Ok(text) = std::str::from_utf8(&input) {
+            for token in text.split_whitespace() {
+                self.add_monitor_files(OsStr::new(token));
+            }
+        } else {
+            for token in input
+                .split(u8::is_ascii_whitespace)
+                .filter(|token| !token.is_empty())
+            {
+                self.add_monitor_files(OsStr::from_bytes(token));
+            }
         }
         Ok(())
     }
