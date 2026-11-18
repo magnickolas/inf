@@ -173,7 +173,10 @@ impl Config {
         // files, generated source lists, etc. must be supplied with `--monitor`.
         let mut args = compile_cmd.split_whitespace();
         while let Some(arg) = args.next() {
-            if matches!(arg, "-o" | "-MF") {
+            if matches!(
+                arg,
+                "-o" | "-MF" | "-MJ" | "-serialize-diagnostics" | "--serialize-diagnostics"
+            ) {
                 // A compiler output can already exist and change on every run.
                 args.next();
                 continue;
@@ -227,10 +230,16 @@ mod tests {
     }
 
     #[test]
-    fn detects_compile_file_args() {
+    fn detects_compile_inputs_and_skips_clang_outputs() {
         let temp = tempfile::tempdir().unwrap();
         let source = temp.path().join("main.c");
         std::fs::write(&source, "").unwrap();
+        let database = temp.path().join("compile.json");
+        let diagnostics = temp.path().join("diagnostics.dia");
+        let diagnostics_alias = temp.path().join("alias.dia");
+        for output in [&database, &diagnostics, &diagnostics_alias] {
+            std::fs::write(output, "").unwrap();
+        }
 
         let cli = Cli {
             run_cmd: None,
@@ -245,18 +254,18 @@ mod tests {
             verbose: false,
             debug: false,
             compile_cmd: vec![
-                "gcc".into(),
-                "-Wall".into(),
+                "clang".into(),
+                "-MJ".into(),
+                database.to_string_lossy().into(),
+                "--serialize-diagnostics".into(),
+                diagnostics.to_string_lossy().into(),
+                "-serialize-diagnostics".into(),
+                diagnostics_alias.to_string_lossy().into(),
                 source.to_string_lossy().into(),
             ],
         };
 
         let config = Config::from_cli(cli).unwrap();
-        assert!(
-            config
-                .monitor_files
-                .iter()
-                .any(|path| path == Path::new(&source))
-        );
+        assert_eq!(config.monitor_files, [source]);
     }
 }
