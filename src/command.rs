@@ -1,7 +1,7 @@
 use std::{
     fs::{File, OpenOptions},
     io::{self, Write},
-    os::unix::process::ExitStatusExt,
+    os::unix::{fs::OpenOptionsExt, process::ExitStatusExt},
     process::ExitStatus,
     process::Stdio,
     sync::Arc,
@@ -121,7 +121,7 @@ async fn run_target(
     }
 
     let input = if let Some(path) = &config.input_file {
-        match File::open(path) {
+        match open_run_input(path) {
             Ok(file) => Some(file),
             Err(err) => {
                 eprintln!("ERROR: failed to open input file {path:?}: {err}");
@@ -148,6 +148,22 @@ async fn run_target(
         CommandResult::Cancelled => RunResult::Cancelled,
         CommandResult::Finished(_) => RunResult::Completed,
     })
+}
+
+fn open_run_input(path: &str) -> io::Result<File> {
+    // Validate the opened file so a replacement between validation and open
+    // cannot leave us blocked waiting for a FIFO writer.
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a regular file",
+        ));
+    }
+    Ok(file)
 }
 
 #[derive(Clone, Copy)]

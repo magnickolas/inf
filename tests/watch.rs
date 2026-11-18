@@ -229,6 +229,31 @@ fn deleted_input_file_can_be_recreated_without_restarting_inf() {
 }
 
 #[test]
+fn fifo_replacement_is_rejected_without_blocking_watcher() {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+    let dir = TestDir::new();
+    dir.write("input.txt", "original\n");
+    let mut inf = RunningInf::spawn(dir.path(), &["-i", "input.txt", "-r", "cat"]);
+    let timeout = Duration::from_secs(5);
+    inf.wait_for_line_count_at_least("original", 1, timeout)
+        .unwrap();
+
+    let fifo = dir.path().join("fifo");
+    let fifo_name = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    // SAFETY: fifo_name is a valid NUL-terminated path in the test directory.
+    assert_eq!(unsafe { libc::mkfifo(fifo_name.as_ptr(), 0o600) }, 0);
+    std::fs::rename(fifo, dir.path().join("input.txt")).unwrap();
+    inf.wait_for_line_count_at_least(
+        "ERROR: failed to open input file \"input.txt\": expected a regular file",
+        1,
+        timeout,
+    )
+    .unwrap();
+    assert!(inf.interrupt_and_wait(timeout));
+}
+
+#[test]
 fn postpone_runs_after_file_change() {
     let dir = TestDir::new();
     dir.init_default_files();
