@@ -696,3 +696,24 @@ fn blocked_compiler_output_replay_can_be_interrupted() {
     child.wait().unwrap();
     panic!("shutdown waited for the stdout pipe to be drained");
 }
+
+#[test]
+fn invalid_tmpdir_does_not_prevent_compilation() {
+    let dir = TestDir::new();
+    dir.touch("source");
+    assert_cmd::Command::new(support::inf_bin())
+        .current_dir(dir.path())
+        .env("TMPDIR", dir.path().join("missing"))
+        .args([
+            "-z",
+            "-m",
+            "source",
+            "--",
+            "touch compiled; kill -TERM \"$PPID\"",
+        ])
+        .timeout(Duration::from_secs(5))
+        .assert()
+        .success()
+        .stdout("");
+    assert!(dir.path().join("compiled").is_file());
+}

@@ -229,7 +229,7 @@ async fn run_in_foreground(
 }
 
 async fn run_captured(
-    cmd: Command,
+    mut cmd: Command,
     mode: OutputMode,
     cancel: &mut watch::Receiver<u64>,
 ) -> Result<CommandResult> {
@@ -238,8 +238,14 @@ async fn run_captured(
     // foreground ownership. They still run in a process group so cancellation
     // can stop descendant processes.
     let mut capture = if matches!(mode, OutputMode::CaptureStdout) {
-        let file = tempfile::tempfile().context("failed to create compiler output file")?;
-        Some(fs::File::from_std(file))
+        match tempfile::tempfile().or_else(|_| tempfile::tempfile_in("/tmp")) {
+            Ok(file) => Some(fs::File::from_std(file)),
+            Err(err) => {
+                eprintln!("Failed to capture compiler output, streaming it instead: {err}");
+                cmd.stdout(Stdio::inherit());
+                None
+            }
+        }
     } else {
         None
     };
