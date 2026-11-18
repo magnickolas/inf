@@ -60,7 +60,8 @@ on standard input\&. Requires
 .PP
 \fB\-m\fR, \fB\-\-monitor\fR \fIfile\fR[,\fIfile\fR\&...]
 .RS 4
-Append file(s) to the list of paths to monitor\&.
+Append file(s) to the list of paths to monitor\&. Escape a literal comma with \fB\e,\fR and a literal backslash with \fB\e\e\fR\&. The same escapes apply to monitor lists read from standard input\&.
+For example, use \fB\-m 'a\e,b.txt'\fR to watch \fIa,b.txt\fR\&.
 .RE
 .PP
 \fB\-n\fR, \fB\-\-noparse\fR

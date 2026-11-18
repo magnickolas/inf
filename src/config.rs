@@ -138,17 +138,33 @@ impl Config {
     }
 
     fn add_monitor_files(&mut self, value: &OsStr) {
-        for file in value.as_bytes().split(|&byte| byte == b',') {
-            let path = expand_tilde(file);
-            if path.is_absolute() {
-                self.monitor_files.push(path);
-            } else {
-                self.monitor_files.push(
-                    env::current_dir()
-                        .unwrap_or_else(|_| PathBuf::from("."))
-                        .join(path),
-                );
+        let mut bytes = value.as_bytes().iter().copied().peekable();
+        let mut path = Vec::new();
+        while let Some(byte) = bytes.next() {
+            match byte {
+                b',' => {
+                    self.add_monitor_path(&path);
+                    path.clear();
+                }
+                b'\\' if matches!(bytes.peek(), Some(b',' | b'\\')) => {
+                    path.extend(bytes.next());
+                }
+                _ => path.push(byte),
             }
+        }
+        self.add_monitor_path(&path);
+    }
+
+    fn add_monitor_path(&mut self, file: &[u8]) {
+        let path = expand_tilde(file);
+        if path.is_absolute() {
+            self.monitor_files.push(path);
+        } else {
+            self.monitor_files.push(
+                env::current_dir()
+                    .unwrap_or_else(|_| PathBuf::from("."))
+                    .join(path),
+            );
         }
     }
 

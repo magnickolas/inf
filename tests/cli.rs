@@ -259,3 +259,28 @@ fn validation_error_keeps_exit_code_when_stderr_is_closed() {
         .unwrap();
     assert_eq!(status.code(), Some(1));
 }
+
+#[test]
+fn escaped_comma_in_monitor_flag_preserves_filename() {
+    let dir = TestDir::new();
+    dir.touch("a,b.txt");
+    dir.touch(r"c\d.txt");
+    inf_in(&dir)
+        .args(["-d", "-m", r"a\,b.txt,c\\d.txt"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("a,b.txt").and(predicate::str::contains(r"c\d.txt")));
+}
+
+#[test]
+fn escaped_comma_in_piped_monitor_list_preserves_filename() {
+    let dir = TestDir::new();
+    dir.touch("a,b.txt");
+    inf_in(&dir)
+        .arg("-d")
+        .write_stdin("a\\,b.txt\n")
+        .timeout(std::time::Duration::from_secs(5))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("a,b.txt"));
+}
