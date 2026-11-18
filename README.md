@@ -48,7 +48,7 @@ For build systems, list every source file that should trigger a rebuild. Here th
 echo src/*.c src/*.h | inf --run "make test" make -j4
 ```
 
-- Run a static type checker in _zen_ mode (no meta-headers), whenever any Python file in `src/` or its subdirectories changes:
+- Run a static type checker in _zen_ mode whenever any Python file in `src/` or its subdirectories changes:
 
 ```console
 inf -z mypy src/**/*.py

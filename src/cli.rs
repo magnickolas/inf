@@ -66,7 +66,11 @@ pub(crate) struct Cli {
     )]
     pub(crate) waitkey: bool,
 
-    #[arg(short = 'z', long = "zen", help = "Show only commands output")]
+    #[arg(
+        short = 'z',
+        long = "zen",
+        help = "Hide command banners and success messages. Report failures."
+    )]
     pub(crate) zen: bool,
 
     #[arg(short = 'v', long = "verbose", help = "Always print compiler output")]
