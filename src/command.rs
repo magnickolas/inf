@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{self, Seek, Write},
+    io::{self, Write},
     os::unix::{fs::OpenOptionsExt, process::ExitStatusExt},
     process::ExitStatus,
     process::Stdio,
@@ -21,7 +21,12 @@ use nix::{
     unistd::{Pid, getpgrp, read, tcgetpgrp, tcsetpgrp},
 };
 use tokio::sync::watch;
-use tokio::{fs, io::AsyncWriteExt, process::Command, time};
+use tokio::{
+    fs,
+    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
+    process::Command,
+    time,
+};
 
 use crate::{config::Config, output::Colors};
 
@@ -266,11 +271,7 @@ async fn run_captured(
             let capture = (&mut stdout_task).await??;
             (&mut stderr_task).await??;
             if !status.success() && let Some(file) = capture {
-                let mut file = file.into_std().await;
-                file.rewind()?;
-                let mut stdout = io::stdout().lock();
-                io::copy(&mut file, &mut stdout)?;
-                stdout.flush()?;
+                replay_compiler_output(file).await?;
             }
             Ok(CommandResult::Finished(status))
         } => result,
@@ -280,6 +281,55 @@ async fn run_captured(
             stderr_task.abort();
             Ok(CommandResult::Cancelled)
         }
+    }
+}
+
+async fn replay_compiler_output(mut file: fs::File) -> io::Result<()> {
+    file.rewind().await?;
+    let mut buffer = [0; 8192];
+    loop {
+        let len = file.read(&mut buffer).await?;
+        if len == 0 {
+            return Ok(());
+        }
+        let mut remaining = &buffer[..len];
+        while !remaining.is_empty() {
+            match try_write_stdout(remaining) {
+                Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+                Ok(written) => remaining = &remaining[written..],
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                    time::sleep(CHILD_POLL_INTERVAL).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+}
+
+fn try_write_stdout(bytes: &[u8]) -> io::Result<usize> {
+    let fd = libc::STDOUT_FILENO;
+    // SAFETY: The slice stays valid for the duration of the write. Restore
+    // stdout's flags before yielding because other processes may share them.
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        if flags == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        let restore = flags & libc::O_NONBLOCK == 0;
+        if restore && libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        let written = libc::write(fd, bytes.as_ptr().cast(), bytes.len());
+        let result = if written == -1 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(written as usize)
+        };
+        if restore && libc::fcntl(fd, libc::F_SETFL, flags) == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        result
     }
 }
 

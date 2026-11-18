@@ -642,3 +642,57 @@ fn stdin_piped_monitor_files() {
     assert!(monitor_line.contains("main.c"));
     assert!(monitor_line.contains("extra.txt"));
 }
+
+#[test]
+fn blocked_compiler_output_replay_can_be_interrupted() {
+    use std::{
+        os::fd::AsRawFd,
+        process::{Command, Stdio},
+        thread,
+        time::Instant,
+    };
+
+    use nix::{
+        sys::signal::{Signal, kill},
+        unistd::Pid,
+    };
+
+    let dir = TestDir::new();
+    dir.touch("source");
+    let mut child = Command::new(support::inf_bin())
+        .current_dir(dir.path())
+        .args([
+            "-z",
+            "-m",
+            "source",
+            "--",
+            "head -c 1048576 /dev/zero; exit 1",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut stdout = libc::pollfd {
+        fd: child.stdout.as_ref().unwrap().as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: stdout describes one open pipe descriptor owned by child.stdout.
+    let ready = unsafe { libc::poll(&mut stdout, 1, 5000) };
+    assert_ne!(stdout.revents & libc::POLLIN, 0, "poll returned {ready}");
+    thread::sleep(Duration::from_millis(200));
+
+    kill(Pid::from_raw(child.id() as i32), Signal::SIGTERM).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(status.success());
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+    panic!("shutdown waited for the stdout pipe to be drained");
+}
