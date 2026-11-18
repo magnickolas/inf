@@ -31,6 +31,12 @@ detect_target() {
         *) die "unsupported architecture: $arch" ;;
     esac
 
+    case "$arch_part:$os_part" in
+        aarch64:unknown-freebsd)
+            die "no prebuilt archive for ARM64 FreeBSD. Build inf from source."
+            ;;
+    esac
+
     echo "${arch_part}-${os_part}"
 }
 
