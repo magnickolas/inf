@@ -7,7 +7,10 @@ mod config;
 mod output;
 mod watch;
 
-use std::process::ExitCode;
+use std::{
+    io::{self, Write},
+    process::ExitCode,
+};
 
 use anyhow::Result;
 
@@ -17,13 +20,13 @@ async fn main() -> ExitCode {
         Ok(code) => ExitCode::from(code),
         Err(err)
             if err
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|err| err.kind() == std::io::ErrorKind::BrokenPipe) =>
+                .downcast_ref::<io::Error>()
+                .is_some_and(|err| err.kind() == io::ErrorKind::BrokenPipe) =>
         {
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("ERROR: {err}");
+            let _ = writeln!(io::stderr().lock(), "ERROR: {err}");
             ExitCode::from(1)
         }
     }

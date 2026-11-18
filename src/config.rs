@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     env,
     ffi::OsStr,
-    io::{self, IsTerminal, Read},
+    io::{self, IsTerminal, Read, Write},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
 };
@@ -186,7 +186,13 @@ fn expand_tilde(path: &[u8]) -> PathBuf {
 }
 
 fn error(colors: &Colors, message: &str) -> u8 {
-    eprintln!("{}ERROR: {}{}", colors.red, message, colors.reset);
+    let _ = writeln!(
+        io::stderr().lock(),
+        "{}ERROR: {}{}",
+        colors.red,
+        message,
+        colors.reset
+    );
     1
 }
 

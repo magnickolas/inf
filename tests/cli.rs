@@ -242,3 +242,20 @@ fn non_utf8_piped_monitor_path_reaches_file_validation() {
         .code(1)
         .stderr(predicate::str::contains("ERROR: missing file"));
 }
+
+#[test]
+fn validation_error_keeps_exit_code_when_stderr_is_closed() {
+    use std::process::Stdio;
+
+    let dir = TestDir::new();
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let status = Command::new(support::inf_bin())
+        .current_dir(dir.path())
+        .args(["-m", "missing.txt", "-r", "true"])
+        .stdin(Stdio::null())
+        .stderr(writer)
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(1));
+}
